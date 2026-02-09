@@ -1,0 +1,24 @@
+FROM n8n/n8n:latest
+
+# Set environment variables
+ENV N8N_HOST=0.0.0.0
+ENV N8N_PORT=5678
+ENV N8N_PROTOCOL=http
+ENV N8N_EDITOR_BASE_URL=http://localhost:5678
+ENV N8N_API_BASE_URL=http://localhost:5678/rest
+ENV N8N_PUBLIC_API_BASE_URL=http://localhost:5678/public
+ENV DB_TYPE=postgresdb
+ENV DB_POSTGRESDB_HOST=postgres
+ENV DB_POSTGRESDB_PORT=5432
+ENV DB_POSTGRESDB_DATABASE=n8n
+ENV DB_POSTGRESDB_USER=n8n
+ENV DB_POSTGRESDB_PASSWORD=n8n
+
+# Install additional dependencies if needed
+RUN npm install -g n8n
+
+# Expose the port
+EXPOSE 5678
+
+# Start n8n
+CMD ["n8n", "start"]
