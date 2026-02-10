@@ -3,6 +3,7 @@ import { runGeminiApiPrompt } from './gemini-api';
 
 type GeminiPromptOptions = {
     thinkingBudget?: number;
+    model?: string;
 };
 
 const hasApiKey = () => Boolean(process.env.GEMINI_API_KEY);

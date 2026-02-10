@@ -114,6 +114,24 @@ Environment variables used by the code:
 - `ELO_MONITOR_INTERVAL_MS` (default: 5000)
 - `ELO_HEALTH_URL` (optional: endpoint to ping for health logging)
 - `ELO_DISCOVERY_ENABLED` (default: true)
+- `ELO_DISCOVERY_ACTIVE_SCAN` (default: true)
+- `ELO_DISCOVERY_SUBNET` (optional: override subnet base, e.g. `192.168.1.0/24`)
+- `ELO_DISCOVERY_RANGE` (optional: explicit range, e.g. `192.168.1.10-192.168.1.200`)
+- `ELO_DISCOVERY_PORTS` (default: `4387,554,8899`)
+- `ELO_DISCOVERY_SCAN_TIMEOUT_MS` (default: `250`)
+- `ELO_DISCOVERY_SCAN_CONCURRENCY` (default: `64`)
+- `ELO_DISCOVERY_SCAN_INTERVAL_MS` (default: `0` = only on startup)
+- `ELO_GREE_BROADCAST_ENABLED` (default: true)
+- `ELO_GREE_BROADCAST_PORTS` (default: `4387`)
+- `ELO_GREE_BROADCAST_INTERVAL_MS` (default: `60000`)
+- `ELO_GREE_BROADCAST_PAYLOAD` (default: `{"t":"scan"}`)
+- `ELO_SSDP_ENABLED` (default: true)
+- `ELO_SSDP_INTERVAL_MS` (default: `60000`)
+- `ELO_FINGERPRINT_AI` (default: true when GEMINI_API_KEY is set)
+- `ELO_FINGERPRINT_MODEL` (default: `gemini-2.5-flash`)
+- `ELO_FINGERPRINT_TIMEOUT_MS` (default: `1500`)
+- `ELO_WOL_ENABLED` (default: true)
+- `ELO_WOL_BROADCAST` (default: `255.255.255.255`)
 - `ELO_DECISION_LOOP_ENABLED` (default: true)
 - `ELO_DECISION_INTERVAL_MS` (default: 10000)
 - `ELO_DECISION_LOG_LIMIT` (default: 100)
@@ -127,7 +145,26 @@ if it is not set, the CLI falls back to the local Gemini CLI binary.
 Automation creation/refactor requests auto-scale the thinking budget between 4000–16000 based on context size.
 Simple Q&A prompts use a thinking budget of 0.
 
-Network discovery uses mDNS when the optional `bonjour-service` dependency is installed. If it is missing, ELO will log a warning and continue without discovery.
+Network discovery uses mDNS (including `_services._dns-sd._udp`, AirPlay, RAOP, printer) when the optional `bonjour-service` dependency is installed, plus an active TCP scan, SSDP listener, and a UDP broadcast for Gree devices. SSDP responses with Samsung/Tizen headers are tagged automatically. If `bonjour-service` is missing, ELO still performs the active scan/broadcast and logs the results.
+
+### Optional: Nmap discovery script
+
+If you want a deeper scan (similar to Home Assistant), you can run the bundled Nmap helper. It discovers live hosts and then scans selected TCP/UDP ports (including Samsung 8001/8002/1515), ingesting results into `logs/events.jsonl`. If a Samsung MAC is detected but those ports are closed, it will send a Wake-on-LAN packet.
+
+The ingestion step also captures extra metadata (MAC/vendor, open ports, HTTP headers + title snippet, RTSP server banner, TCP banners, UDP probe responses, SSDP LOCATION parsing) to help the AI identify devices and protocols.
+
+Environment knobs used by the script:
+
+- `ELO_DISCOVERY_SUBNET` (optional, e.g. `192.168.16.0/24`)
+- `ELO_NMAP_PORTS` (default: `80,443,8080,554,8899,8000,22`)
+- `ELO_NMAP_UDP_PORTS` (default: `4387,1900`)
+
+Run it from the project root:
+
+```bash
+chmod +x scripts/nmap-discovery.sh
+sudo ./scripts/nmap-discovery.sh
+```
 
 ## CLI usage (tested behavior)
 
@@ -204,6 +241,7 @@ Example 2:
 ## Docker (optional)
 
 `docker-compose.yml` runs the ELO engine container with host networking for device discovery.
+For active scans (Nmap/UDP), the container runs as root with `NET_RAW`/`NET_ADMIN` capabilities enabled.
 
 ```bash
 docker-compose up --build

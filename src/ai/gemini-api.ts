@@ -4,25 +4,26 @@ const DEFAULT_MODEL = 'gemini-1.5-flash';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
 const getApiKey = () => process.env.GEMINI_API_KEY;
-const getModel = () => process.env.GEMINI_API_MODEL || DEFAULT_MODEL;
+const getModel = (override?: string) => override || process.env.GEMINI_API_MODEL || DEFAULT_MODEL;
 const getBaseUrl = () => process.env.GEMINI_API_BASE_URL || DEFAULT_BASE_URL;
 
 type GeminiApiOptions = {
     thinkingBudget?: number;
+    model?: string;
 };
 
-const buildUrl = () => {
+const buildUrl = (modelOverride?: string) => {
     const apiKey = getApiKey();
     if (!apiKey) {
         throw new Error('GEMINI_API_KEY is required to call the Gemini API.');
     }
-    const model = getModel();
+    const model = getModel(modelOverride);
     const baseUrl = getBaseUrl();
     return `${baseUrl}/models/${model}:generateContent?key=${apiKey}`;
 };
 
 export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptions = {}): Promise<string> => {
-    const url = buildUrl();
+    const url = buildUrl(options.model);
     const thinkingBudget = options.thinkingBudget;
     const payload: Record<string, unknown> = {
         contents: [

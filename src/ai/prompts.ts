@@ -71,5 +71,24 @@ export const prompts = {
             `Reply: ${input.reply}.`,
             input.context ? `Context: ${input.context}.` : ''
         ].join('\n');
+    },
+    fingerprintDevice: (input: {
+        ip: string;
+        port: number;
+        protocol: string;
+        rawHex: string;
+        hint?: string;
+    }) => {
+        return [
+            'You are a network device fingerprinting assistant.',
+            'Given raw hex data from a device response, identify the most likely device/vendor/model.',
+            'Return JSON only: { "deviceType": string, "vendor": string, "model": string, "confidence": number, "protocol": string, "notes": string }.',
+            'If unsure, set confidence below 0.5 and use "unknown" for fields.',
+            `IP: ${input.ip}.`,
+            `Port: ${input.port}.`,
+            `Protocol: ${input.protocol}.`,
+            input.hint ? `Hint: ${input.hint}.` : '',
+            `RawHex: ${input.rawHex}`
+        ].join('\n');
     }
 };

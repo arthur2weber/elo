@@ -10,6 +10,10 @@ services:
         GEMINI_GCLOUD_COMPONENT: ${GEMINI_GCLOUD_COMPONENT:-}
     restart: unless-stopped
     network_mode: host
+    user: "0:0"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     environment:
       - GEMINI_CLI_BIN=${GEMINI_CLI_BIN:-gemini}
       - GEMINI_CLI_ARGS=${GEMINI_CLI_ARGS:-}
@@ -21,11 +25,9 @@ services:
       - CLOUDSDK_CONFIG=/gcloud
     volumes:
       - ./:/app
-      - elo_node_modules:/app/node_modules
       - gcloud_config:/gcloud
       - ./logs:/app/logs
       - ./automations:/app/automations
 
 volumes:
-  elo_node_modules:
   gcloud_config:
