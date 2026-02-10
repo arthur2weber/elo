@@ -7,6 +7,21 @@ export type WorkflowFile = {
   filePath: string;
 };
 
+export type LogEntry = {
+  timestamp: string;
+  device: string;
+  event: string;
+  payload?: Record<string, unknown>;
+};
+
+export type RequestLogEntry = {
+  timestamp: string;
+  user?: string;
+  request: string;
+  context?: string;
+  payload?: Record<string, unknown>;
+};
+
 const normalizeName = (name: string) => name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 const ensureDir = async (dirPath: string) => {
@@ -17,6 +32,8 @@ const getBasePath = () => process.env.N8N_FILES_PATH || process.cwd();
 
 export const getWorkflowsDir = () => path.join(getBasePath(), 'workflows');
 export const getIntegrationsDir = () => path.join(getBasePath(), 'integrations');
+export const getLogsDir = () => path.join(getBasePath(), 'logs');
+export const getRequestsLogPath = () => path.join(getLogsDir(), 'requests.jsonl');
 
 export const getWorkflowsFromFiles = async (): Promise<WorkflowFile[]> => {
   const workflowsDir = getWorkflowsDir();
@@ -60,6 +77,24 @@ export const createWorkflowFile = async (name: string, data: Record<string, unkn
   return { id, name: payload.name, filePath };
 };
 
+export const readWorkflowFile = async (name: string) => {
+  const workflowsDir = getWorkflowsDir();
+  await ensureDir(workflowsDir);
+  const safeName = normalizeName(name);
+  const filePath = path.join(workflowsDir, `${safeName}.json`);
+  const file = await fs.readFile(filePath, 'utf-8');
+  return { filePath, data: JSON.parse(file) as Record<string, unknown> };
+};
+
+export const updateWorkflowFile = async (name: string, data: Record<string, unknown>) => {
+  const workflowsDir = getWorkflowsDir();
+  await ensureDir(workflowsDir);
+  const safeName = normalizeName(name);
+  const filePath = path.join(workflowsDir, `${safeName}.json`);
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+  return { filePath };
+};
+
 export const installIntegrationFiles = async (name: string, description?: string) => {
   const integrationsDir = getIntegrationsDir();
   await ensureDir(integrationsDir);
@@ -86,4 +121,65 @@ export const installIntegrationFiles = async (name: string, description?: string
   );
 
   return { name: safeName, path: integrationPath };
+};
+
+export const appendLogEntry = async (entry: LogEntry) => {
+  const logsDir = getLogsDir();
+  await ensureDir(logsDir);
+  const logPath = path.join(logsDir, 'events.jsonl');
+  const payload = {
+    timestamp: entry.timestamp || new Date().toISOString(),
+    device: entry.device,
+    event: entry.event,
+    payload: entry.payload ?? {}
+  };
+  await fs.appendFile(logPath, `${JSON.stringify(payload)}\n`);
+  return { logPath, entry: payload };
+};
+
+export const readRecentLogs = async (limit = 50): Promise<LogEntry[]> => {
+  const logsDir = getLogsDir();
+  await ensureDir(logsDir);
+  const logPath = path.join(logsDir, 'events.jsonl');
+  try {
+    const file = await fs.readFile(logPath, 'utf-8');
+    const lines = file.split('\n').filter(Boolean);
+    return lines.slice(-limit).map((line) => JSON.parse(line) as LogEntry);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+};
+
+export const appendRequestLog = async (entry: RequestLogEntry) => {
+  const logsDir = getLogsDir();
+  await ensureDir(logsDir);
+  const logPath = getRequestsLogPath();
+  const payload = {
+    timestamp: entry.timestamp || new Date().toISOString(),
+    user: entry.user ?? 'default',
+    request: entry.request,
+    context: entry.context ?? '',
+    payload: entry.payload ?? {}
+  };
+  await fs.appendFile(logPath, `${JSON.stringify(payload)}\n`);
+  return { logPath, entry: payload };
+};
+
+export const readRecentRequests = async (limit = 50): Promise<RequestLogEntry[]> => {
+  const logsDir = getLogsDir();
+  await ensureDir(logsDir);
+  const logPath = getRequestsLogPath();
+  try {
+    const file = await fs.readFile(logPath, 'utf-8');
+    const lines = file.split('\n').filter(Boolean);
+    return lines.slice(-limit).map((line) => JSON.parse(line) as RequestLogEntry);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
 };

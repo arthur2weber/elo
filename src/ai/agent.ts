@@ -6,6 +6,14 @@ export type WorkflowSpec = {
     description?: string;
 };
 
+export type WorkflowUpdateSpec = {
+    name: string;
+    description?: string;
+    preferences?: string;
+    logs: Array<Record<string, unknown>>;
+    currentWorkflow: Record<string, unknown>;
+};
+
 class AIAgent {
     async processInput(input: string): Promise<string> {
         const prompt = `${prompts.welcome}\n\n${input}`;
@@ -17,11 +25,38 @@ class AIAgent {
         const response = await runGeminiPrompt(prompt);
         const json = this.extractJson(response);
 
-        if (!json.name) {
-            json.name = spec.name;
+        const workflow = this.unwrapWorkflow(json, spec.name);
+        return workflow;
+    }
+
+    async updateWorkflowJson(spec: WorkflowUpdateSpec): Promise<Record<string, unknown>> {
+        const prompt = prompts.workflowUpdateJson({
+            name: spec.name,
+            description: spec.description,
+            preferences: spec.preferences,
+            logs: spec.logs,
+            currentWorkflow: spec.currentWorkflow
+        });
+        const response = await runGeminiPrompt(prompt);
+        const json = this.extractJson(response);
+
+        const workflow = this.unwrapWorkflow(json, spec.name);
+        return workflow;
+    }
+
+    private unwrapWorkflow(json: Record<string, unknown>, fallbackName: string) {
+        if ('workflow' in json && typeof json.workflow === 'object' && json.workflow) {
+            const workflow = json.workflow as Record<string, unknown>;
+            if (!workflow.name) {
+                workflow.name = fallbackName;
+            }
+            return workflow;
         }
 
-        return json as Record<string, unknown>;
+        if (!json.name) {
+            json.name = fallbackName;
+        }
+        return json;
     }
 
     private extractJson(response: string): Record<string, unknown> {
