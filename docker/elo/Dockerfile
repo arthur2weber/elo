@@ -3,6 +3,7 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 
 ARG GEMINI_CLI_INSTALL=
+ARG GEMINI_GCLOUD_COMPONENT=
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
@@ -11,7 +12,6 @@ RUN apt-get update \
   && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends google-cloud-cli \
-  && gcloud components install cloud-code-enterprise --quiet \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
@@ -25,6 +25,7 @@ COPY integrations ./integrations
 COPY README.md ./README.md
 
 RUN if [ -n "$GEMINI_CLI_INSTALL" ]; then sh -c "$GEMINI_CLI_INSTALL"; fi
+RUN if [ -n "$GEMINI_GCLOUD_COMPONENT" ]; then gcloud components install "$GEMINI_GCLOUD_COMPONENT" --quiet; fi
 
 ENV NODE_ENV=production
 

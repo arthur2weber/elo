@@ -31,6 +31,7 @@ services:
       dockerfile: docker/elo/Dockerfile
       args:
         GEMINI_CLI_INSTALL: ${GEMINI_CLI_INSTALL:-}
+        GEMINI_GCLOUD_COMPONENT: ${GEMINI_GCLOUD_COMPONENT:-}
     environment:
       - N8N_MODE=api
       - N8N_API_BASE_URL=http://n8n:5678/rest
@@ -39,6 +40,9 @@ services:
       - GEMINI_CLI_BIN=${GEMINI_CLI_BIN:-gemini}
       - GEMINI_CLI_ARGS=${GEMINI_CLI_ARGS:-}
       - GEMINI_CLI_PROMPT_ARG=${GEMINI_CLI_PROMPT_ARG:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_API_MODEL=${GEMINI_API_MODEL:-}
+      - GEMINI_API_BASE_URL=${GEMINI_API_BASE_URL:-}
       - CLOUDSDK_CONFIG=/gcloud
     volumes:
       - ./:/app

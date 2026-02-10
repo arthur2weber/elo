@@ -65,30 +65,40 @@ It builds from `docker/elo/Dockerfile` and includes **Google Cloud CLI + Gemini 
 Build arg supported:
 
 - `GEMINI_CLI_INSTALL`: shell command to install your Gemini CLI inside the image (leave empty to skip).
+- `GEMINI_GCLOUD_COMPONENT`: optional gcloud component to install (leave empty to skip).
 
 The container uses these runtime environment variables (same as local usage):
 
 - `GEMINI_CLI_BIN` (default: `gemini`)
 - `GEMINI_CLI_ARGS` (extra CLI args)
 - `GEMINI_CLI_PROMPT_ARG` (if your CLI uses a flag to pass the prompt)
+- `GEMINI_API_KEY` (if set, uses Gemini API instead of CLI)
+- `GEMINI_API_MODEL` (default: `gemini-1.5-flash`)
+- `GEMINI_API_BASE_URL` (default: `https://generativelanguage.googleapis.com/v1beta`)
 
 ### Gemini Code Assist CLI (Google Cloud)
 
 The container image installs:
 
 - `gcloud` (Google Cloud CLI)
-- `cloud-code-enterprise` component (Gemini Code Assist CLI)
+- an optional Gemini Code Assist component (set `GEMINI_GCLOUD_COMPONENT`)
 
 Authentication happens inside the container and is persisted in a volume (`gcloud_config`).
 Run both logins once per environment:
 
 ```bash
-docker compose run --rm elo-cli gcloud auth login
-docker compose run --rm elo-cli gcloud auth application-default login
+docker compose run --rm --entrypoint gcloud elo-cli auth login
+docker compose run --rm --entrypoint gcloud elo-cli auth application-default login
 ```
 
 After authentication, set `GEMINI_CLI_BIN` + `GEMINI_CLI_ARGS` to the command that invokes Gemini Code Assist in your setup.
 This project will call that command with the prompt you provide.
+
+If you are unsure about the component name, run this inside the container to list available ones:
+
+```bash
+docker compose run --rm --entrypoint gcloud elo-cli components list
+```
 
 ## Gemini CLI + Google AI Studio
 
@@ -99,10 +109,16 @@ Environment variables used by the code:
 - `GEMINI_CLI_BIN` (default: `gemini`)
 - `GEMINI_CLI_ARGS` (extra CLI args)
 - `GEMINI_CLI_PROMPT_ARG` (if your CLI uses a flag to pass the prompt)
+- `GEMINI_API_KEY` (if set, uses Gemini API instead of CLI)
+- `GEMINI_API_MODEL` (default: `gemini-1.5-flash`)
+- `GEMINI_API_BASE_URL` (default: `https://generativelanguage.googleapis.com/v1beta`)
 - `N8N_MODE` (`files` or `api`, default: `files`)
 - `N8N_FILES_PATH` (default: project root)
 - `N8N_API_BASE_URL` (default: `http://localhost:5678/rest`)
 - `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD` (optional, for protected n8n)
+
+If `GEMINI_API_KEY` is set, the CLI will call **Google AI Studio Gemini API** directly.
+If it is not set, the CLI falls back to the local Gemini CLI binary.
 
 ## CLI usage (tested behavior)
 
