@@ -61,6 +61,7 @@ npm install
 
 The `elo-cli` service runs the CLI inside Docker, so your local machine does not need the Gemini CLI.
 It builds from `docker/elo/Dockerfile` and includes **Google Cloud CLI + Gemini Code Assist (cloud-code-enterprise)**.
+Running in production mode, it now compiles TypeScript (`npm run build`) and executes optimized JavaScript, reducing RAM usage.
 
 Build arg supported:
 
@@ -120,9 +121,18 @@ Environment variables used by the code:
 - `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD` (optional, for protected n8n)
 
 If `GEMINI_API_KEY` is set, the CLI will call **Google AI Studio Gemini API** directly.
-If it is not set, the CLI falls back to the local Gemini CLI binary.
+if it is not set, the CLI falls back to the local Gemini CLI binary.
 Workflow creation/refactor requests auto-scale the thinking budget between 4000–16000 based on JSON size.
 Simple Q&A prompts use a thinking budget of 0.
+
+## Neuron Consolidation (new)
+
+The ELO system now supports a "Consolidation" phase:
+
+1. **Pending Approval**: AI suggests a workflow update.
+2. **Consolidation**: The system injects the approved JSON into n8n via API (`POST /workflows`).
+3. **Health Check**: It verifies `N8N_HEALTH_URL` immediately after injection.
+4. **Auto-Rollback**: If n8n becomes unhealthy, ELO logs a rollback event (future: auto-delete workflow).
 
 ## CLI usage (tested behavior)
 
@@ -202,7 +212,7 @@ npm start
 Environment variables:
 
 - `ELO_MONITOR_ENABLED` (default: true)
-- `ELO_MONITOR_INTERVAL_MS` (default: 1000)
+- `ELO_MONITOR_INTERVAL_MS` (default: 5000) - Polling interval (5s) to save I/O
 - `N8N_HEALTH_URL` (default: `http://localhost:5678/healthz`)
 - `ELO_DECISION_LOOP_ENABLED` (default: true)
 - `ELO_DECISION_INTERVAL_MS` (default: 10000)

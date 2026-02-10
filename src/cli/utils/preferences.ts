@@ -9,6 +9,7 @@ export type DecisionEntry = {
   actionKey: string;
   suggestion: string;
   accepted: boolean;
+  status?: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED'; 
   details?: Record<string, unknown>;
 };
 
