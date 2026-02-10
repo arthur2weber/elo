@@ -26,7 +26,7 @@ ELO is meant to be a **proactive smart‑home butler** that constantly adapts au
 - **Updates workflow JSON files using AI** when you run `update-workflow --ai`.
 - **Learns preference patterns** from user decisions (accept/reject suggestions).
 - **Optionally uses Gemini CLI** to generate the workflow JSON content.
-- **Optionally calls the n8n REST API** (if you choose `--mode api`).
+- **Optionally calls the n8n REST API** (if you choose `--mode api` and provide auth credentials when required).
 
 ## 🚫 What it does NOT do yet
 
@@ -57,6 +57,39 @@ Install dependencies:
 npm install
 ```
 
+## Dockerized CLI (no local Gemini CLI needed)
+
+The `elo-cli` service runs the CLI inside Docker, so your local machine does not need the Gemini CLI.
+It builds from `docker/elo/Dockerfile` and includes **Google Cloud CLI + Gemini Code Assist (cloud-code-enterprise)**.
+
+Build arg supported:
+
+- `GEMINI_CLI_INSTALL`: shell command to install your Gemini CLI inside the image (leave empty to skip).
+
+The container uses these runtime environment variables (same as local usage):
+
+- `GEMINI_CLI_BIN` (default: `gemini`)
+- `GEMINI_CLI_ARGS` (extra CLI args)
+- `GEMINI_CLI_PROMPT_ARG` (if your CLI uses a flag to pass the prompt)
+
+### Gemini Code Assist CLI (Google Cloud)
+
+The container image installs:
+
+- `gcloud` (Google Cloud CLI)
+- `cloud-code-enterprise` component (Gemini Code Assist CLI)
+
+Authentication happens inside the container and is persisted in a volume (`gcloud_config`).
+Run both logins once per environment:
+
+```bash
+docker compose run --rm elo-cli gcloud auth login
+docker compose run --rm elo-cli gcloud auth application-default login
+```
+
+After authentication, set `GEMINI_CLI_BIN` + `GEMINI_CLI_ARGS` to the command that invokes Gemini Code Assist in your setup.
+This project will call that command with the prompt you provide.
+
 ## Gemini CLI + Google AI Studio
 
 The CLI calls a local **Gemini CLI** binary. Configure your Gemini CLI separately (tokens, Google AI Studio, etc).
@@ -69,6 +102,7 @@ Environment variables used by the code:
 - `N8N_MODE` (`files` or `api`, default: `files`)
 - `N8N_FILES_PATH` (default: project root)
 - `N8N_API_BASE_URL` (default: `http://localhost:5678/rest`)
+- `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD` (optional, for protected n8n)
 
 ## CLI usage (tested behavior)
 
