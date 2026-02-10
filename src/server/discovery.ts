@@ -6,6 +6,17 @@ import path from 'path';
 import { appendLogEntry } from '../cli/utils/storage-files';
 import { runGeminiPrompt } from '../ai/gemini';
 import { prompts } from '../ai/prompts';
+import {
+  defaultBroadcastProfiles,
+  defaultPortSignatures,
+  defaultSsdpMatchers,
+  resolveSsdpConfig,
+  resolveVendorBroadcastConfig,
+  vendorEnvKeys,
+  type VendorPluginConfig,
+  type VendorPortSignature,
+  type VendorBroadcastProfile
+} from '../vendors/discovery-vendors';
 
 type BonjourModule = {
   Bonjour: new () => {
@@ -21,18 +32,7 @@ type DiscoveryHandle = {
   stop: () => void;
 };
 
-type DiscoveryPluginConfig = {
-  greeBroadcast?: {
-    enabled?: boolean;
-    ports?: number[];
-    intervalMs?: number;
-    payload?: string | Record<string, unknown>;
-  };
-  ssdp?: {
-    enabled?: boolean;
-    intervalMs?: number;
-  };
-};
+type DiscoveryPluginConfig = VendorPluginConfig;
 
 const knownDevices = new Set<string>();
 
@@ -40,9 +40,7 @@ const DEFAULT_SCAN_PORTS = [4387, 554, 8899, 8001, 8002, 1515];
 const DEFAULT_SCAN_TIMEOUT_MS = 250;
 const DEFAULT_SCAN_CONCURRENCY = 64;
 const DEFAULT_SCAN_INTERVAL_MS = 0;
-const DEFAULT_GREE_BROADCAST_PORTS = [4387];
-const DEFAULT_GREE_BROADCAST_INTERVAL_MS = 60000;
-const DEFAULT_GREE_BROADCAST_PAYLOAD = '{"t":"scan"}';
+const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 60000;
 const DEFAULT_SSDP_INTERVAL_MS = 60000;
 const DEFAULT_FINGERPRINT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_FINGERPRINT_TIMEOUT_MS = 1500;
@@ -106,8 +104,11 @@ const parseNumber = (value: string | undefined, fallback: number) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const parsePayload = (value: string | undefined) => {
-  if (!value) return Buffer.from(DEFAULT_GREE_BROADCAST_PAYLOAD, 'utf8');
+const parsePayload = (value: string | Record<string, unknown> | undefined) => {
+  if (!value) return Buffer.from('{"t":"scan"}', 'utf8');
+  if (typeof value === 'object') {
+    return Buffer.from(JSON.stringify(value), 'utf8');
+  }
   const trimmed = value.trim();
   if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length % 2 === 0) {
     return Buffer.from(trimmed, 'hex');
@@ -145,24 +146,35 @@ const resolveNumber = (envValue: string | undefined, configValue: number | undef
   return fallback;
 };
 
-const resolvePortList = (
-  envValue: string | undefined,
-  configValue: number[] | undefined,
-  fallback: number[]
-) => {
-  if (envValue) return parsePortList(envValue, fallback);
-  if (Array.isArray(configValue) && configValue.length > 0) return configValue;
-  return fallback;
-};
-
 const resolvePayload = (
   envValue: string | undefined,
   configValue: string | Record<string, unknown> | undefined
 ) => {
   if (envValue) return parsePayload(envValue);
   if (!configValue) return parsePayload(undefined);
-  if (typeof configValue === 'string') return parsePayload(configValue);
-  return Buffer.from(JSON.stringify(configValue), 'utf8');
+  return parsePayload(configValue);
+};
+
+const pickEnv = (keys: string[]) => keys.map((key) => process.env[key]).find((value) => value !== undefined);
+
+const getPortSignature = (port: number): VendorPortSignature | null =>
+  defaultPortSignatures.find((entry) => entry.ports.includes(port)) ?? null;
+
+const buildBroadcastProfiles = (
+  config: VendorBroadcastProfile[] | undefined,
+  envPorts: string | undefined,
+  envPayload: string | undefined
+) => {
+  const baseProfiles = config && config.length > 0 ? config : defaultBroadcastProfiles;
+  if (!envPorts && !envPayload) return baseProfiles;
+  return baseProfiles.map((profile, index) => {
+    if (index !== 0) return profile;
+    return {
+      ...profile,
+      ports: envPorts ? parsePortList(envPorts, profile.ports) : profile.ports,
+      payload: envPayload ? envPayload : profile.payload
+    };
+  });
 };
 
 const parseIPv4 = (value: string) => {
@@ -267,9 +279,9 @@ const probeTcpPort = (ip: string, port: number, timeoutMs: number) =>
   });
 
 const mapPortSignature = (port: number) => {
-  if (port === 4387) return 'gree';
-  if (port === 554 || port === 8899) return 'yoosee';
-  if (port === 8001 || port === 8002 || port === 1515) return 'samsung';
+  const signature = getPortSignature(port);
+  if (signature) return signature.tag;
+  if (port === 554 || port === 8899) return 'rtsp';
   return 'unknown';
 };
 
@@ -381,7 +393,7 @@ export const startDiscovery = (): DiscoveryHandle => {
       { type: 'airplay' },
       { type: 'raop' },
       { type: 'printer' },
-      { type: 'samsung-tv' },
+  { type: 'media-device' },
       { type: 'services', protocol: 'udp' as const }
     ];
 
@@ -452,6 +464,7 @@ export const startDiscovery = (): DiscoveryHandle => {
         for (const port of scanPorts) {
           const open = await probeTcpPort(ip, port, scanTimeoutMs);
           if (!open) continue;
+          const portSignature = getPortSignature(port);
           const signature = mapPortSignature(port);
           const key = buildDeviceKey({ source: 'tcp_scan', ip, port, type: signature });
           if (knownDevices.has(key)) {
@@ -467,7 +480,7 @@ export const startDiscovery = (): DiscoveryHandle => {
             signature
           });
 
-          if (fingerprintEnabled && (port === 8001)) {
+          if (fingerprintEnabled && portSignature?.fingerprintHint) {
             const fingerprintKey = `${ip}:${port}`;
             if (fingerprinted.has(fingerprintKey)) continue;
             fingerprinted.add(fingerprintKey);
@@ -479,7 +492,7 @@ export const startDiscovery = (): DiscoveryHandle => {
                   port,
                   protocol: 'tcp',
                   rawHex: response.rawHex,
-                  hint: 'Samsung device often uses port 8001.',
+                  hint: portSignature.fingerprintHint,
                   model: fingerprintModel
                 });
                 await appendLogEntry({
@@ -518,52 +531,51 @@ export const startDiscovery = (): DiscoveryHandle => {
     }
   }
 
-  const greeBroadcastEnabled = resolveBoolean(
-    process.env.ELO_GREE_BROADCAST_ENABLED,
-    pluginConfig?.greeBroadcast?.enabled,
+  const vendorBroadcastConfig = resolveVendorBroadcastConfig(pluginConfig);
+  const vendorBroadcastEnabled = resolveBoolean(
+    pickEnv(vendorEnvKeys.broadcastEnabled),
+    vendorBroadcastConfig?.enabled,
     true
   );
-  if (greeBroadcastEnabled) {
-    const broadcastPorts = resolvePortList(
-      process.env.ELO_GREE_BROADCAST_PORTS,
-      pluginConfig?.greeBroadcast?.ports,
-      DEFAULT_GREE_BROADCAST_PORTS
-    );
+  if (vendorBroadcastEnabled) {
     const broadcastIntervalMs = resolveNumber(
-      process.env.ELO_GREE_BROADCAST_INTERVAL_MS,
-      pluginConfig?.greeBroadcast?.intervalMs,
-      DEFAULT_GREE_BROADCAST_INTERVAL_MS
+      pickEnv(vendorEnvKeys.broadcastIntervalMs),
+      vendorBroadcastConfig?.intervalMs,
+      DEFAULT_VENDOR_BROADCAST_INTERVAL_MS
     );
-    const payload = resolvePayload(
-      process.env.ELO_GREE_BROADCAST_PAYLOAD,
-      pluginConfig?.greeBroadcast?.payload
+    const broadcastProfiles = buildBroadcastProfiles(
+      vendorBroadcastConfig?.profiles,
+      pickEnv(vendorEnvKeys.broadcastPorts),
+      pickEnv(vendorEnvKeys.broadcastPayload)
     );
 
     const socket = dgram.createSocket('udp4');
     sockets.push(socket);
     socket.on('error', (error) => {
-      console.error('[ELO] Gree broadcast socket error:', error);
+      console.error('[ELO] Vendor broadcast socket error:', error);
     });
     socket.on('message', (message, rinfo) => {
+      const signature = getPortSignature(rinfo.port);
+      const typeTag = signature?.tag || 'udp_broadcast';
       const key = buildDeviceKey({
         source: 'udp_broadcast',
         address: rinfo.address,
         port: rinfo.port,
-        type: 'gree'
+        type: typeTag
       });
       if (knownDevices.has(key)) return;
       knownDevices.add(key);
       const rawHex = message.toString('hex');
       logDiscovery({
         source: 'udp_broadcast',
-        name: 'GREE',
-        type: 'gree',
+        name: 'Vendor',
+        type: typeTag,
         ip: rinfo.address,
         port: rinfo.port,
         raw: message.toString('utf8'),
         rawHex
       }).catch((error) => {
-        console.error('[ELO] Failed to log Gree broadcast response:', error);
+        console.error('[ELO] Failed to log vendor broadcast response:', error);
       });
 
       const fingerprintEnabled = parseBoolean(
@@ -571,7 +583,7 @@ export const startDiscovery = (): DiscoveryHandle => {
         Boolean(process.env.GEMINI_API_KEY)
       );
       const fingerprintModel = process.env.ELO_FINGERPRINT_MODEL || DEFAULT_FINGERPRINT_MODEL;
-      if (fingerprintEnabled && rinfo.port === 4387 && rawHex) {
+      if (fingerprintEnabled && rawHex) {
         const fingerprintKey = `${rinfo.address}:${rinfo.port}:udp`;
         if (fingerprinted.has(fingerprintKey)) return;
         fingerprinted.add(fingerprintKey);
@@ -580,7 +592,7 @@ export const startDiscovery = (): DiscoveryHandle => {
           port: rinfo.port,
           protocol: 'udp',
           rawHex,
-          hint: 'Gree aircon discovery response.',
+          hint: signature?.fingerprintHint,
           model: fingerprintModel
         })
           .then((analysis) =>
@@ -604,12 +616,15 @@ export const startDiscovery = (): DiscoveryHandle => {
     });
 
     const sendBroadcast = () => {
-      for (const port of broadcastPorts) {
-        socket.send(payload, port, '255.255.255.255', (error) => {
-          if (error) {
-            console.error('[ELO] Failed to send Gree broadcast:', error);
-          }
-        });
+      for (const profile of broadcastProfiles) {
+        const payload = resolvePayload(undefined, profile.payload);
+        for (const port of profile.ports) {
+          socket.send(payload, port, '255.255.255.255', (error) => {
+            if (error) {
+              console.error(`[ELO] Failed to send ${profile.displayName} broadcast:`, error);
+            }
+          });
+        }
       }
     };
 
@@ -622,15 +637,12 @@ export const startDiscovery = (): DiscoveryHandle => {
     });
   }
 
-  const ssdpEnabled = resolveBoolean(
-    process.env.ELO_SSDP_ENABLED,
-    pluginConfig?.ssdp?.enabled,
-    true
-  );
+  const ssdpConfig = resolveSsdpConfig(pluginConfig);
+  const ssdpEnabled = resolveBoolean(process.env.ELO_SSDP_ENABLED, ssdpConfig?.enabled, true);
   if (ssdpEnabled) {
     const ssdpIntervalMs = resolveNumber(
       process.env.ELO_SSDP_INTERVAL_MS,
-      pluginConfig?.ssdp?.intervalMs,
+      ssdpConfig?.intervalMs,
       DEFAULT_SSDP_INTERVAL_MS
     );
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
@@ -641,9 +653,13 @@ export const startDiscovery = (): DiscoveryHandle => {
       const headers = parseSsdpHeaders(raw);
       const headerText = getHeaderText(headers);
       const stHeader = headers['st']?.toLowerCase() || '';
-      const tag = headerText.includes('samsung') || headerText.includes('tizen') || stHeader.includes('samsung:smarttv')
-        ? 'samsung'
-        : undefined;
+      const matchers = ssdpConfig?.matchers?.length ? ssdpConfig.matchers : defaultSsdpMatchers;
+      const matched = matchers.find((matcher) => {
+        const headerHit = matcher.headerIncludes.some((entry) => headerText.includes(entry));
+        const stHit = matcher.stIncludes?.some((entry) => stHeader.includes(entry)) ?? false;
+        return headerHit || stHit;
+      });
+      const tag = matched?.tag;
       const key = buildDeviceKey({
         source: 'ssdp',
         address: rinfo.address,
