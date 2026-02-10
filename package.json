@@ -7,7 +7,9 @@
     "start": "ts-node src/server/index.ts",
     "build": "tsc",
     "cli": "ts-node src/cli/index.ts",
-    "smoke": "ts-node scripts/smoke.ts"
+    "smoke": "ts-node scripts/smoke.ts",
+    "test": "ts-node scripts/test-core.ts",
+    "test:n8n": "ts-node scripts/test-n8n.ts"
   },
   "dependencies": {
   "axios": "^1.13.5",
