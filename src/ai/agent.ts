@@ -1,17 +1,17 @@
 import { runGeminiPrompt } from './gemini';
 import { prompts } from './prompts';
 
-export type WorkflowSpec = {
+export type AutomationSpec = {
     name: string;
     description?: string;
 };
 
-export type WorkflowUpdateSpec = {
+export type AutomationUpdateSpec = {
     name: string;
     description?: string;
     preferences?: string;
     logs: Array<Record<string, unknown>>;
-    currentWorkflow: Record<string, unknown>;
+    currentCode: string;
 };
 
 const MIN_THINKING_BUDGET = 4000;
@@ -48,63 +48,39 @@ class AIAgent {
         return runGeminiPrompt(prompt, { thinkingBudget: 0 });
     }
 
-    async generateWorkflowJson(spec: WorkflowSpec): Promise<Record<string, unknown>> {
+    async generateAutomationCode(spec: AutomationSpec): Promise<string> {
         const prompt = prompts.workflowJson(spec.name, spec.description);
         const thinkingBudget = computeThinkingBudgetFromJson({ name: spec.name, description: spec.description ?? '' });
         const response = await runGeminiPrompt(prompt, { thinkingBudget });
-        const json = this.extractJson(response);
-
-        const workflow = this.unwrapWorkflow(json, spec.name);
-        return workflow;
+        return this.extractCode(response);
     }
 
-    async updateWorkflowJson(spec: WorkflowUpdateSpec): Promise<Record<string, unknown>> {
+    async updateAutomationCode(spec: AutomationUpdateSpec): Promise<string> {
         const prompt = prompts.workflowUpdateJson({
             name: spec.name,
             description: spec.description,
             preferences: spec.preferences,
             logs: spec.logs,
-            currentWorkflow: spec.currentWorkflow
+            currentWorkflow: spec.currentCode
         });
         const thinkingBudget = computeThinkingBudgetFromJson({
             name: spec.name,
             description: spec.description ?? '',
             preferences: spec.preferences ?? '',
             logs: spec.logs,
-            currentWorkflow: spec.currentWorkflow
+            currentCode: spec.currentCode
         });
         const response = await runGeminiPrompt(prompt, { thinkingBudget });
-        const json = this.extractJson(response);
-
-        const workflow = this.unwrapWorkflow(json, spec.name);
-        return workflow;
+        return this.extractCode(response);
     }
 
-    private unwrapWorkflow(json: Record<string, unknown>, fallbackName: string) {
-        if ('workflow' in json && typeof json.workflow === 'object' && json.workflow) {
-            const workflow = json.workflow as Record<string, unknown>;
-            if (!workflow.name) {
-                workflow.name = fallbackName;
-            }
-            return workflow;
+    private extractCode(response: string): string {
+        const trimmed = response.trim();
+        const fenced = trimmed.match(/```[a-zA-Z]*\n([\s\S]*?)```/);
+        if (fenced && fenced[1]) {
+            return fenced[1].trim();
         }
-
-        if (!json.name) {
-            json.name = fallbackName;
-        }
-        return json;
-    }
-
-    private extractJson(response: string): Record<string, unknown> {
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-            throw new Error('Gemini response did not contain JSON.');
-        }
-        try {
-            return JSON.parse(jsonMatch[0]);
-        } catch (error) {
-            throw new Error(`Failed to parse Gemini JSON response: ${(error as Error).message}`);
-        }
+        return trimmed;
     }
 }
 

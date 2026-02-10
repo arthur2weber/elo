@@ -1,15 +1,14 @@
 {
-  "name": "n8n-ai-manager",
+  "name": "elo-automation-engine",
   "version": "1.0.0",
-  "description": "An AI-enhanced manager for n8n workflows and integrations.",
+  "description": "An AI-driven automation engine for generating and running TypeScript automations.",
   "main": "src/cli/index.ts",
   "scripts": {
     "start": "ts-node src/server/index.ts",
     "build": "tsc",
     "cli": "ts-node src/cli/index.ts",
     "smoke": "ts-node scripts/smoke.ts",
-    "test": "ts-node scripts/test-core.ts",
-    "test:n8n": "ts-node scripts/test-n8n.ts"
+  "test": "ts-node scripts/test-core.ts"
   },
   "dependencies": {
   "axios": "^1.13.5",

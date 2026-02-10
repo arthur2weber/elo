@@ -1,12 +1,9 @@
 #!/bin/bash
 
-# This script sets up the initial environment and configurations for the n8n AI Manager project.
+# This script sets up the initial environment and configurations for the ELO engine.
 
 # Create necessary directories
-mkdir -p workflows integrations/custom-node/src
-
-# Copy sample workflow
-cp ./workflows/sample-workflow.json ./workflows/sample-workflow.json.bak
+mkdir -p automations logs
 
 # Install dependencies
 npm install

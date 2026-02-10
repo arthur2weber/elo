@@ -31,5 +31,6 @@ RUN npm run build
 
 ENV NODE_ENV=production
 
-ENTRYPOINT ["node", "dist/cli/index.js"]
-CMD ["list-workflows"]
+# Default to server mode (active brain) but allow overriding for CLI tasks
+ENTRYPOINT ["node"]
+CMD ["dist/server/index.js"]

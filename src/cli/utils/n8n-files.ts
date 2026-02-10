@@ -28,7 +28,7 @@ const ensureDir = async (dirPath: string) => {
   await fs.mkdir(dirPath, { recursive: true });
 };
 
-const getBasePath = () => process.env.N8N_FILES_PATH || process.cwd();
+const getBasePath = () => process.env.ELO_FILES_PATH || process.env.N8N_FILES_PATH || process.cwd();
 
 export const getWorkflowsDir = () => path.join(getBasePath(), 'workflows');
 export const getIntegrationsDir = () => path.join(getBasePath(), 'integrations');

@@ -1,42 +1,16 @@
 version: '3.8'
 
 services:
-  n8n:
-    image: n8nio/n8n:latest
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_HOST=localhost
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - N8N_SKIP_ONBOARDING=true
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=elo
-      - N8N_BASIC_AUTH_PASSWORD=elo
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_HOST=db
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=n8n
-      - DB_POSTGRESDB_USER=n8n
-      - DB_POSTGRESDB_PASSWORD=n8n
-    volumes:
-      - n8n_data:/home/node/.n8n
-      - ./workflows:/files/workflows:ro
-    depends_on:
-      - db
-
-  elo-cli:
+  elo-core:
     build:
       context: .
       dockerfile: docker/elo/Dockerfile
       args:
         GEMINI_CLI_INSTALL: ${GEMINI_CLI_INSTALL:-}
         GEMINI_GCLOUD_COMPONENT: ${GEMINI_GCLOUD_COMPONENT:-}
+    restart: unless-stopped
+    network_mode: host
     environment:
-      - N8N_MODE=api
-      - N8N_API_BASE_URL=http://n8n:5678/rest
-      - N8N_BASIC_AUTH_USER=elo
-      - N8N_BASIC_AUTH_PASSWORD=elo
       - GEMINI_CLI_BIN=${GEMINI_CLI_BIN:-gemini}
       - GEMINI_CLI_ARGS=${GEMINI_CLI_ARGS:-}
       - GEMINI_CLI_PROMPT_ARG=${GEMINI_CLI_PROMPT_ARG:-}
@@ -49,24 +23,9 @@ services:
       - ./:/app
       - elo_node_modules:/app/node_modules
       - gcloud_config:/gcloud
-    depends_on:
-      - n8n
-
-  db:
-    image: postgres:latest
-    environment:
-      - POSTGRES_DB=n8n
-      - POSTGRES_USER=n8n
-      - POSTGRES_PASSWORD=n8n
-    volumes:
-      - ./postgres_data:/var/lib/postgresql/data
-
-networks:
-  default:
-    driver: bridge
+      - ./logs:/app/logs
+      - ./automations:/app/automations
 
 volumes:
-  n8n_data:
-  postgres_data:
   elo_node_modules:
   gcloud_config:

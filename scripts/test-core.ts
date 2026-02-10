@@ -5,14 +5,15 @@ import assert from 'assert';
 import {
   appendLogEntry,
   appendRequestLog,
-  createWorkflowFile,
-  getWorkflowsFromFiles,
-  installIntegrationFiles,
   readRecentLogs,
-  readRecentRequests,
-  readWorkflowFile,
-  updateWorkflowFile
+  readRecentRequests
 } from '../src/cli/utils/n8n-files';
+import {
+  createAutomationFile,
+  listAutomations,
+  readAutomationFile,
+  updateAutomationFile
+} from '../src/cli/utils/automation-files';
 import { appendDecision, getPreferenceSummary } from '../src/cli/utils/preferences';
 import { addDevice, readDevices } from '../src/cli/utils/device-registry';
 import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from '../src/server/decision-context';
@@ -20,29 +21,20 @@ import { validateWorkflowDevices } from '../src/server/device-validator';
 
 const run = async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'elo-core-test-'));
-  process.env.N8N_FILES_PATH = tmpDir;
+  process.env.ELO_FILES_PATH = tmpDir;
 
-  const workflow = await createWorkflowFile('Core Test Workflow', {
-    nodes: [],
-    connections: {}
-  });
-  assert.ok(workflow.filePath.endsWith('.json'), 'Workflow file should be created');
+  const automation = await createAutomationFile('Core Test Automation', 'export default async function() {}');
+  assert.ok(automation.filePath.endsWith('.ts'), 'Automation file should be created');
 
-  const listed = await getWorkflowsFromFiles();
-  assert.ok(listed.length === 1, 'Workflow list should include one item');
+  const listed = await listAutomations();
+  assert.ok(listed.length === 1, 'Automation list should include one item');
 
-  const read = await readWorkflowFile('Core Test Workflow');
-  assert.strictEqual(read.data.name, 'Core Test Workflow');
+  const read = await readAutomationFile('Core Test Automation');
+  assert.ok(read.code.includes('export default'), 'Automation file should contain code');
 
-  await updateWorkflowFile('Core Test Workflow', {
-    ...read.data,
-    active: true
-  });
-  const updated = await readWorkflowFile('Core Test Workflow');
-  assert.strictEqual(updated.data.active, true, 'Workflow should be updated');
-
-  const integration = await installIntegrationFiles('Core Integration', 'Test integration');
-  assert.ok(integration.path.includes('core-integration'));
+  await updateAutomationFile('Core Test Automation', 'export default async function() { console.log("ok"); }');
+  const updated = await readAutomationFile('Core Test Automation');
+  assert.ok(updated.code.includes('console.log'), 'Automation should be updated');
 
   await appendLogEntry({
     timestamp: new Date().toISOString(),

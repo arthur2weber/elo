@@ -1,9 +1,8 @@
 import { Command } from 'commander';
-import { createWorkflowHandler } from './commands/create-workflow';
-import { installIntegrationHandler } from './commands/install-integration';
-import { listWorkflowsHandler } from './commands/list-workflows';
+import { createAutomationHandler } from './commands/create-automation';
+import { listAutomationsHandler } from './commands/list-automations';
 import { addLogHandler } from './commands/add-log';
-import { updateWorkflowHandler } from './commands/update-workflow';
+import { updateAutomationHandler } from './commands/update-automation';
 import { recordDecisionHandler } from './commands/record-decision';
 import { summarizePreferencesHandler } from './commands/summarize-preferences';
 import { addDeviceHandler } from './commands/add-device';
@@ -12,34 +11,23 @@ import { addRequestHandler } from './commands/add-request';
 const program = new Command();
 
 program
-  .name('n8n-ai-manager')
-  .description('CLI for managing n8n workflows and integrations')
+  .name('elo-engine')
+  .description('CLI for managing ELO automations and logs')
   .version('1.0.0');
 
 program
-  .command('create-workflow <name>')
-  .description('Create a new workflow in n8n')
-  .option('-m, --mode <mode>', 'files or api', process.env.N8N_MODE || 'files')
-  .option('-a, --ai', 'Use Gemini CLI to generate workflow JSON')
-  .option('-d, --description <text>', 'Describe the workflow to the AI')
-  .action((name: string, options: { mode?: 'files' | 'api'; ai?: boolean; description?: string }) =>
-    createWorkflowHandler(name, options)
+  .command('create-automation <name>')
+  .description('Create a new automation script')
+  .option('-a, --ai', 'Use Gemini to generate automation code')
+  .option('-d, --description <text>', 'Describe the automation to the AI')
+  .action((name: string, options: { ai?: boolean; description?: string }) =>
+    createAutomationHandler(name, options)
   );
 
 program
-  .command('install-integration <name>')
-  .description('Install a specified integration into n8n')
-  .option('-m, --mode <mode>', 'files or api', process.env.N8N_MODE || 'files')
-  .option('-d, --description <text>', 'Describe the integration')
-  .action((name: string, options: { mode?: 'files' | 'api'; description?: string }) =>
-    installIntegrationHandler(name, options)
-  );
-
-program
-  .command('list-workflows')
-  .description('List all workflows in n8n')
-  .option('-m, --mode <mode>', 'files or api', process.env.N8N_MODE || 'files')
-  .action((options: { mode?: 'files' | 'api' }) => listWorkflowsHandler(options));
+  .command('list-automations')
+  .description('List all automations')
+  .action(() => listAutomationsHandler());
 
 program
   .command('add-log')
@@ -82,20 +70,18 @@ program
   );
 
 program
-  .command('update-workflow <name>')
-  .description('Update an existing workflow using AI and recent logs')
-  .option('-m, --mode <mode>', 'files or api', process.env.N8N_MODE || 'files')
-  .option('-a, --ai', 'Use Gemini CLI to update the workflow')
-  .option('-d, --description <text>', 'Describe the workflow intent')
+  .command('update-automation <name>')
+  .description('Update an existing automation using AI and recent logs')
+  .option('-a, --ai', 'Use Gemini to update the automation')
+  .option('-d, --description <text>', 'Describe the automation intent')
   .option('-p, --preferences <text>', 'User preference summary')
   .option('-l, --log-limit <number>', 'Number of log entries to include', '50')
   .action((name: string, options: {
-    mode?: 'files' | 'api';
     ai?: boolean;
     description?: string;
     preferences?: string;
     logLimit?: string;
-  }) => updateWorkflowHandler(name, options));
+  }) => updateAutomationHandler(name, options));
 
 program
   .command('record-decision')

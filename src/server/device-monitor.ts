@@ -4,7 +4,7 @@ import { DeviceConfig, readDevices } from '../cli/utils/device-registry';
 
 type MonitorOptions = {
   intervalMs?: number;
-  n8nHealthUrl?: string;
+  healthUrl?: string;
 };
 
 const DEFAULT_INTERVAL = 5000;
@@ -80,19 +80,19 @@ const pollDevice = async (device: DeviceConfig) => {
   }
 };
 
-const pollN8nHealth = async (url: string) => {
+const pollHealth = async (url: string) => {
   try {
     const response = await axios.get(url, { timeout: 2000 });
     await appendLogEntry({
       timestamp: new Date().toISOString(),
-      device: 'n8n',
+      device: 'health',
       event: 'health',
       payload: response.data
     });
   } catch (error) {
     await appendLogEntry({
       timestamp: new Date().toISOString(),
-      device: 'n8n',
+      device: 'health',
       event: 'health_error',
       payload: { message: (error as Error).message }
     });
@@ -101,12 +101,14 @@ const pollN8nHealth = async (url: string) => {
 
 export const startDeviceMonitor = (options: MonitorOptions = {}) => {
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL;
-  const n8nHealthUrl = options.n8nHealthUrl ?? 'http://localhost:5678/healthz';
+  const healthUrl = options.healthUrl;
 
   const tick = async () => {
     const devices = await readDevices();
     await Promise.all(devices.map((device) => pollDevice(device)));
-    await pollN8nHealth(n8nHealthUrl);
+    if (healthUrl) {
+      await pollHealth(healthUrl);
+    }
   };
 
   const timer = setInterval(() => {

@@ -1,21 +1,21 @@
 import AIAgent from '../ai/agent';
-import { readRecentLogs, readRecentRequests, readWorkflowFile, updateWorkflowFile } from '../cli/utils/n8n-files';
+import { readRecentLogs, readRecentRequests } from '../cli/utils/n8n-files';
+import { readAutomationFile, updateAutomationFile } from '../cli/utils/automation-files';
 import { getPreferenceSummary } from '../cli/utils/preferences';
 import { readDevices } from '../cli/utils/device-registry';
 import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
-import { validateWorkflowDevices } from './device-validator';
 
 export type DecisionLoopOptions = {
   intervalMs?: number;
   logLimit?: number;
   requestLimit?: number;
-  workflows?: string[];
+  automations?: string[];
 };
 
 const DEFAULT_INTERVAL = 10000;
 
-const parseWorkflows = () => {
-  const value = process.env.ELO_DECISION_WORKFLOWS || '';
+const parseAutomations = () => {
+  const value = process.env.ELO_DECISION_AUTOMATIONS || '';
   return value.split(',').map((entry) => entry.trim()).filter(Boolean);
 };
 
@@ -23,10 +23,10 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL;
   const logLimit = options.logLimit ?? 100;
   const requestLimit = options.requestLimit ?? 50;
-  const workflows = options.workflows ?? parseWorkflows();
+  const automations = options.automations ?? parseAutomations();
 
-  if (workflows.length === 0) {
-    console.warn('Decision loop disabled: no workflows configured (ELO_DECISION_WORKFLOWS).');
+  if (automations.length === 0) {
+    console.warn('Decision loop disabled: no automations configured (ELO_DECISION_AUTOMATIONS).');
     return () => undefined;
   }
 
@@ -41,17 +41,16 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
   const structuredContext = buildDecisionContext(devices, statusSnapshot, requests);
   const decisionContext = formatDecisionContext(structuredContext);
 
-    await Promise.all(workflows.map(async (workflowName) => {
-      const currentWorkflow = (await readWorkflowFile(workflowName)).data;
-      const updatedWorkflow = await agent.updateWorkflowJson({
-        name: workflowName,
+    await Promise.all(automations.map(async (automationName) => {
+      const currentCode = (await readAutomationFile(automationName)).code;
+      const updatedCode = await agent.updateAutomationCode({
+        name: automationName,
         description: `Auto-updated by ELO decision loop.`,
         preferences: `${preferences}\nStructuredContext: ${decisionContext}`,
         logs,
-        currentWorkflow
+        currentCode
       });
-      validateWorkflowDevices(updatedWorkflow, devices);
-      await updateWorkflowFile(workflowName, updatedWorkflow);
+      await updateAutomationFile(automationName, updatedCode);
     }));
   };
 
