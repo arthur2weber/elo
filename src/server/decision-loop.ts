@@ -1,7 +1,9 @@
 import AIAgent from '../ai/agent';
 import { readRecentLogs, readRecentRequests } from '../cli/utils/n8n-files';
 import { readAutomationFile, updateAutomationFile } from '../cli/utils/automation-files';
-import { getPreferenceSummary } from '../cli/utils/preferences';
+import { buildPreferenceStats, getPreferenceSummary, readDecisions, shouldAutoApprove } from '../cli/utils/preferences';
+import { appendDecision } from '../cli/utils/preferences';
+import { appendSuggestion } from '../cli/utils/suggestions';
 import { readDevices } from '../cli/utils/device-registry';
 import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
 
@@ -35,7 +37,8 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
   const tick = async () => {
     const logs = await readRecentLogs(logLimit);
     const requests = await readRecentRequests(requestLimit);
-    const preferences = await getPreferenceSummary();
+  const preferenceSummary = await getPreferenceSummary();
+  const preferenceStats = buildPreferenceStats(await readDecisions(200));
   const devices = await readDevices();
   const statusSnapshot = buildDeviceStatusSnapshot(logs);
   const structuredContext = buildDecisionContext(devices, statusSnapshot, requests);
@@ -46,11 +49,52 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
       const updatedCode = await agent.updateAutomationCode({
         name: automationName,
         description: `Auto-updated by ELO decision loop.`,
-        preferences: `${preferences}\nStructuredContext: ${decisionContext}`,
+        preferences: `${preferenceSummary}\nStructuredContext: ${decisionContext}`,
         logs,
         currentCode
       });
-      await updateAutomationFile(automationName, updatedCode);
+      const actionKey = `auto-${automationName}`;
+      const suggestionMessage = `Observei um novo padrão e posso ajustar "${automationName}" para melhorar seu conforto. Posso aplicar esse ajuste?`;
+      const fallback = {
+        autoApprove: shouldAutoApprove(actionKey, preferenceStats),
+        requiredApprovals: 3,
+        askAgain: true,
+        rationale: 'Fallback preference-based policy.'
+      };
+      const approval = await agent.decideApprovalPolicy({
+        actionKey,
+        suggestion: suggestionMessage,
+        history: preferenceSummary,
+        context: decisionContext,
+        fallback
+      });
+      const suggestionId = `${automationName}-${Date.now()}`;
+
+      await appendSuggestion({
+        id: suggestionId,
+        timestamp: new Date().toISOString(),
+        actionKey,
+        automationName,
+  message: suggestionMessage,
+        code: updatedCode,
+        status: approval.autoApprove ? 'AUTO_APPLIED' : (approval.askAgain ? 'PENDING' : 'REJECTED'),
+        requiredApprovals: approval.requiredApprovals,
+        askAgain: approval.askAgain,
+        rationale: approval.rationale,
+        context: decisionContext
+      });
+
+      if (approval.autoApprove) {
+        await updateAutomationFile(automationName, updatedCode);
+        await appendDecision({
+          timestamp: new Date().toISOString(),
+          actionKey,
+          suggestion: `Auto-applied update for ${automationName}`,
+          accepted: true,
+          details: { suggestionId }
+        });
+        return;
+      }
     }));
   };
 

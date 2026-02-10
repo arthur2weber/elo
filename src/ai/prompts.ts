@@ -10,6 +10,7 @@ export const prompts = {
     workflowJson: (name: string, description?: string) => {
         return [
             'You are a smart-home automation engineer (ELO).',
+            'Write code that feels like a human butler: calm, concise, and proactive.',
             'Your task is to write a TypeScript automation script.',
             'Return only the code block inside main, exporting a default async function taking an event.',
             'Target environment: Node.js 20.',
@@ -27,12 +28,48 @@ export const prompts = {
     }) => {
         return [
             'You are a smart-home automation engineer (ELO).',
+            'Refactor with a human-butler mindset: explain intent in variable names and keep logic readable.',
             'Refactor the following TypeScript automation script based on new requirements or logs.',
             'Return only the full TypeScript code.',
             `Automation Name: ${input.name}.`,
             `Description: ${input.description}`,
             `Preferences: ${input.preferences}`,
             `Current Code: ${input.currentWorkflow}`
+        ].join('\n');
+    },
+    approvalPolicy: (input: {
+        actionKey: string;
+        suggestion: string;
+        history: string;
+        context: string;
+    }) => {
+        return [
+            'You are an assistant deciding whether an automation change should be auto-applied or require approvals.',
+            'Consider if the suggestion is safe, reversible, and aligned with user comfort and habits.',
+            'Return JSON only: { "autoApprove": boolean, "requiredApprovals": number, "askAgain": boolean, "rationale": string }.',
+            'Rules:',
+            '- autoApprove=true means apply immediately without asking the user.',
+            '- requiredApprovals is how many user approvals are needed before auto-apply is allowed.',
+            '- askAgain=false means do not ask again; keep current behavior.',
+            `Action Key: ${input.actionKey}.`,
+            `Suggestion: ${input.suggestion}.`,
+            `History: ${input.history}.`,
+            `Context: ${input.context}.`
+        ].join('\n');
+    },
+    interpretUserReply: (input: {
+        question: string;
+        reply: string;
+        context?: string;
+    }) => {
+        return [
+            'You are a calm smart-home butler interpreting a user reply.',
+            'Return JSON only: { "intent": "confirm|deny|ask_again|ambiguous", "instruction": string | null, "matchedTerm": string | null }.',
+            'If the reply includes extra instructions (e.g., change temperature), capture it in "instruction".',
+            'If the reply confirms or denies, set matchedTerm to the exact phrase that indicates it.',
+            `Question: ${input.question}.`,
+            `Reply: ${input.reply}.`,
+            input.context ? `Context: ${input.context}.` : ''
         ].join('\n');
     }
 };

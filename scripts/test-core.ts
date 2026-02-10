@@ -15,6 +15,8 @@ import {
   updateAutomationFile
 } from '../src/cli/utils/automation-files';
 import { appendDecision, getPreferenceSummary } from '../src/cli/utils/preferences';
+import { appendSuggestion, getPendingSuggestions, updateSuggestionStatus } from '../src/cli/utils/suggestions';
+import { interpretUserReply } from '../src/cli/utils/reply-interpreter';
 import { addDevice, readDevices } from '../src/cli/utils/device-registry';
 import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from '../src/server/decision-context';
 import { validateWorkflowDevices } from '../src/server/device-validator';
@@ -103,6 +105,32 @@ const run = async () => {
 
   const summary = await getPreferenceSummary();
   assert.ok(summary.includes('auto-approve'), 'Preference summary should detect auto-approve');
+
+  await appendSuggestion({
+    id: 'suggestion-1',
+    timestamp: new Date().toISOString(),
+    actionKey: 'auto-test',
+    automationName: 'test-automation',
+    message: 'Suggested update',
+    code: 'export default async function() {}',
+    status: 'PENDING',
+    requiredApprovals: 3,
+    askAgain: true
+  });
+
+  const pending = await getPendingSuggestions();
+  assert.ok(pending.length === 1, 'Pending suggestions should include one item');
+
+  const updatedSuggestion = await updateSuggestionStatus('suggestion-1', 'APPROVED');
+  assert.strictEqual(updatedSuggestion.status, 'APPROVED');
+
+  const interpreted = await interpretUserReply({
+    question: 'Posso desligar o ar?',
+    reply: 'Sim, mas deixe em 21 graus',
+    context: 'office'
+  });
+  assert.ok(['confirm', 'deny', 'ask_again', 'ambiguous'].includes(interpreted.intent));
+  assert.ok('matchedTerm' in interpreted);
 
   await rm(tmpDir, { recursive: true, force: true });
   console.log('Core tests passed.');

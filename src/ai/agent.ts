@@ -14,6 +14,13 @@ export type AutomationUpdateSpec = {
     currentCode: string;
 };
 
+export type ApprovalPolicy = {
+    autoApprove: boolean;
+    requiredApprovals: number;
+    askAgain: boolean;
+    rationale?: string;
+};
+
 const MIN_THINKING_BUDGET = 4000;
 const MAX_THINKING_BUDGET = 16000;
 const THINKING_STEP = 1000;
@@ -74,6 +81,45 @@ class AIAgent {
         return this.extractCode(response);
     }
 
+    async decideApprovalPolicy(input: {
+        actionKey: string;
+        suggestion: string;
+        history: string;
+        context: string;
+        fallback?: ApprovalPolicy;
+    }): Promise<ApprovalPolicy> {
+        const fallback: ApprovalPolicy = input.fallback ?? {
+            autoApprove: false,
+            requiredApprovals: 3,
+            askAgain: true,
+            rationale: 'Fallback policy used.'
+        };
+
+        const allowAi = process.env.ELO_AI_APPROVAL === 'true' || Boolean(process.env.GEMINI_API_KEY);
+        if (!allowAi) {
+            return fallback;
+        }
+
+        try {
+            const prompt = prompts.approvalPolicy({
+                actionKey: input.actionKey,
+                suggestion: input.suggestion,
+                history: input.history,
+                context: input.context
+            });
+            const response = await runGeminiPrompt(prompt, { thinkingBudget: 0 });
+            const json = this.extractJson(response);
+            return {
+                autoApprove: Boolean(json.autoApprove),
+                requiredApprovals: Number.isFinite(json.requiredApprovals) ? Number(json.requiredApprovals) : fallback.requiredApprovals,
+                askAgain: typeof json.askAgain === 'boolean' ? json.askAgain : fallback.askAgain,
+                rationale: typeof json.rationale === 'string' ? json.rationale : fallback.rationale
+            };
+        } catch (error) {
+            return fallback;
+        }
+    }
+
     private extractCode(response: string): string {
         const trimmed = response.trim();
         const fenced = trimmed.match(/```[a-zA-Z]*\n([\s\S]*?)```/);
@@ -81,6 +127,14 @@ class AIAgent {
             return fenced[1].trim();
         }
         return trimmed;
+    }
+
+    private extractJson(response: string): Record<string, unknown> {
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error('Gemini response did not contain JSON.');
+        }
+        return JSON.parse(jsonMatch[0]);
     }
 }
 

@@ -3,6 +3,10 @@ import { createAutomationHandler } from './commands/create-automation';
 import { listAutomationsHandler } from './commands/list-automations';
 import { addLogHandler } from './commands/add-log';
 import { updateAutomationHandler } from './commands/update-automation';
+import { listSuggestionsHandler } from './commands/list-suggestions';
+import { approveSuggestionHandler } from './commands/approve-suggestion';
+import { rejectSuggestionHandler } from './commands/reject-suggestion';
+import { replySuggestionHandler } from './commands/reply-suggestion';
 import { recordDecisionHandler } from './commands/record-decision';
 import { summarizePreferencesHandler } from './commands/summarize-preferences';
 import { addDeviceHandler } from './commands/add-device';
@@ -108,5 +112,25 @@ program
   .description('Show inferred preference patterns from decisions')
   .option('-l, --limit <number>', 'Number of decisions to include', '200')
   .action((options: { limit?: string }) => summarizePreferencesHandler(options));
+
+program
+  .command('list-suggestions')
+  .description('List pending automation suggestions')
+  .action(() => listSuggestionsHandler());
+
+program
+  .command('approve-suggestion <id>')
+  .description('Approve a pending suggestion and apply its automation code')
+  .action((id: string) => approveSuggestionHandler(id));
+
+program
+  .command('reject-suggestion <id>')
+  .description('Reject a pending suggestion')
+  .action((id: string) => rejectSuggestionHandler(id));
+
+program
+  .command('reply-suggestion <id> <reply>')
+  .description('Reply to a suggestion with natural language (yes/no + extra instructions)')
+  .action((id: string, reply: string) => replySuggestionHandler(id, reply));
 
 program.parse(process.argv);

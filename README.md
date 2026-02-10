@@ -119,6 +119,8 @@ Environment variables used by the code:
 - `ELO_DECISION_LOG_LIMIT` (default: 100)
 - `ELO_DECISION_REQUEST_LIMIT` (default: 50)
 - `ELO_DECISION_AUTOMATIONS` (comma-separated automation names)
+- `ELO_AI_APPROVAL` (set to true to let Gemini decide approval thresholds)
+- `ELO_AI_REPLY` (set to true to let Gemini parse ambiguous user replies)
 
 If `GEMINI_API_KEY` is set, the CLI will call **Google AI Studio Gemini API** directly.
 if it is not set, the CLI falls back to the local Gemini CLI binary.
@@ -138,7 +140,23 @@ npm run cli add-device --id "office-thermostat" --name "Thermostat" --room "offi
 npm run cli add-request --request "Ajuste o ar para 23C" --user "arthur" --context "office"
 npm run cli record-decision --action-key "set-office-temp-23" --suggestion "Adjust office temp" --accepted
 npm run cli summarize-preferences
+npm run cli list-suggestions
+npm run cli approve-suggestion <id>
+npm run cli reject-suggestion <id>
+npm run cli reply-suggestion <id> "Aham, mas coloca no 21c"
 ```
+
+## Suggestion flow (proactivity)
+
+When the decision loop proposes a change, it creates a **suggestion** entry (`logs/suggestions.jsonl`).
+
+- If `ELO_AI_APPROVAL=true` or `GEMINI_API_KEY` is set, Gemini decides whether to auto-apply or request more approvals.
+- Otherwise, a simple fallback rule is used (>=3 approvals, >=70% acceptance).
+
+## Natural replies and lexicon
+
+User replies are interpreted locally first, using `logs/lexicon.json` (optional). If the reply is long or ambiguous, ELO consults Gemini to extract intent and extra instructions.
+When Gemini is used, it also returns the **matched term** (e.g., "claro", "não"), which is stored back into `logs/lexicon.json` to adapt to the user's language.
 
 ## Example flow (smart-home butler)
 
