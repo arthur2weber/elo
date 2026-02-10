@@ -7,6 +7,10 @@ const getApiKey = () => process.env.GEMINI_API_KEY;
 const getModel = () => process.env.GEMINI_API_MODEL || DEFAULT_MODEL;
 const getBaseUrl = () => process.env.GEMINI_API_BASE_URL || DEFAULT_BASE_URL;
 
+type GeminiApiOptions = {
+    thinkingBudget?: number;
+};
+
 const buildUrl = () => {
     const apiKey = getApiKey();
     if (!apiKey) {
@@ -17,18 +21,29 @@ const buildUrl = () => {
     return `${baseUrl}/models/${model}:generateContent?key=${apiKey}`;
 };
 
-export const runGeminiApiPrompt = async (prompt: string): Promise<string> => {
+export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptions = {}): Promise<string> => {
     const url = buildUrl();
+    const thinkingBudget = options.thinkingBudget;
+    const payload: Record<string, unknown> = {
+        contents: [
+            {
+                role: 'user',
+                parts: [{ text: prompt }]
+            }
+        ]
+    };
+
+    if (typeof thinkingBudget === 'number' && !Number.isNaN(thinkingBudget)) {
+        payload.generationConfig = {
+            thinkingConfig: {
+                thinkingBudget
+            }
+        };
+    }
+
     const response = await axios.post(
         url,
-        {
-            contents: [
-                {
-                    role: 'user',
-                    parts: [{ text: prompt }]
-                }
-            ]
-        },
+        payload,
         { timeout: 60000 }
     );
 

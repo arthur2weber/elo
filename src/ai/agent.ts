@@ -14,15 +14,44 @@ export type WorkflowUpdateSpec = {
     currentWorkflow: Record<string, unknown>;
 };
 
+const MIN_THINKING_BUDGET = 4000;
+const MAX_THINKING_BUDGET = 16000;
+const THINKING_STEP = 1000;
+
+const parseThinkingBudgetOverride = () => {
+    const raw = process.env.THINKING_BUDGET;
+    if (!raw) {
+        return undefined;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isNaN(parsed) || parsed < 0) {
+        return undefined;
+    }
+    return parsed;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const computeThinkingBudgetFromJson = (payload: Record<string, unknown>) => {
+    const override = parseThinkingBudgetOverride();
+    if (typeof override === 'number') {
+        return clamp(override, MIN_THINKING_BUDGET, MAX_THINKING_BUDGET);
+    }
+    const size = JSON.stringify(payload).length;
+    const rounded = Math.ceil(size / THINKING_STEP) * THINKING_STEP;
+    return clamp(rounded, MIN_THINKING_BUDGET, MAX_THINKING_BUDGET);
+};
+
 class AIAgent {
     async processInput(input: string): Promise<string> {
         const prompt = `${prompts.welcome}\n\n${input}`;
-        return runGeminiPrompt(prompt);
+        return runGeminiPrompt(prompt, { thinkingBudget: 0 });
     }
 
     async generateWorkflowJson(spec: WorkflowSpec): Promise<Record<string, unknown>> {
         const prompt = prompts.workflowJson(spec.name, spec.description);
-        const response = await runGeminiPrompt(prompt);
+        const thinkingBudget = computeThinkingBudgetFromJson({ name: spec.name, description: spec.description ?? '' });
+        const response = await runGeminiPrompt(prompt, { thinkingBudget });
         const json = this.extractJson(response);
 
         const workflow = this.unwrapWorkflow(json, spec.name);
@@ -37,7 +66,14 @@ class AIAgent {
             logs: spec.logs,
             currentWorkflow: spec.currentWorkflow
         });
-        const response = await runGeminiPrompt(prompt);
+        const thinkingBudget = computeThinkingBudgetFromJson({
+            name: spec.name,
+            description: spec.description ?? '',
+            preferences: spec.preferences ?? '',
+            logs: spec.logs,
+            currentWorkflow: spec.currentWorkflow
+        });
+        const response = await runGeminiPrompt(prompt, { thinkingBudget });
         const json = this.extractJson(response);
 
         const workflow = this.unwrapWorkflow(json, spec.name);

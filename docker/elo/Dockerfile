@@ -27,7 +27,9 @@ COPY README.md ./README.md
 RUN if [ -n "$GEMINI_CLI_INSTALL" ]; then sh -c "$GEMINI_CLI_INSTALL"; fi
 RUN if [ -n "$GEMINI_GCLOUD_COMPONENT" ]; then gcloud components install "$GEMINI_GCLOUD_COMPONENT" --quiet; fi
 
+RUN npm run build
+
 ENV NODE_ENV=production
 
-ENTRYPOINT ["npm", "run", "cli", "--"]
+ENTRYPOINT ["node", "dist/cli/index.js"]
 CMD ["list-workflows"]

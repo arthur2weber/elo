@@ -75,6 +75,7 @@ The container uses these runtime environment variables (same as local usage):
 - `GEMINI_API_KEY` (if set, uses Gemini API instead of CLI)
 - `GEMINI_API_MODEL` (default: `gemini-1.5-flash`)
 - `GEMINI_API_BASE_URL` (default: `https://generativelanguage.googleapis.com/v1beta`)
+- `THINKING_BUDGET` (optional override; set to -1 for auto sizing)
 
 ### Gemini Code Assist CLI (Google Cloud)
 
@@ -112,6 +113,7 @@ Environment variables used by the code:
 - `GEMINI_API_KEY` (if set, uses Gemini API instead of CLI)
 - `GEMINI_API_MODEL` (default: `gemini-1.5-flash`)
 - `GEMINI_API_BASE_URL` (default: `https://generativelanguage.googleapis.com/v1beta`)
+- `THINKING_BUDGET` (optional override; set to -1 for auto sizing)
 - `N8N_MODE` (`files` or `api`, default: `files`)
 - `N8N_FILES_PATH` (default: project root)
 - `N8N_API_BASE_URL` (default: `http://localhost:5678/rest`)
@@ -119,6 +121,8 @@ Environment variables used by the code:
 
 If `GEMINI_API_KEY` is set, the CLI will call **Google AI Studio Gemini API** directly.
 If it is not set, the CLI falls back to the local Gemini CLI binary.
+Workflow creation/refactor requests auto-scale the thinking budget between 4000–16000 based on JSON size.
+Simple Q&A prompts use a thinking budget of 0.
 
 ## CLI usage (tested behavior)
 
