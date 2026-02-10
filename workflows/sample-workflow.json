@@ -1,4 +1,7 @@
 {
+  "name": "ELO Sample Workflow",
+  "active": false,
+  "settings": {},
   "nodes": [
     {
       "parameters": {

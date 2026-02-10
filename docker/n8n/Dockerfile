@@ -1,4 +1,4 @@
-FROM n8n/n8n:latest
+FROM n8nio/n8n:latest
 
 # Set environment variables
 ENV N8N_HOST=0.0.0.0
@@ -13,9 +13,6 @@ ENV DB_POSTGRESDB_PORT=5432
 ENV DB_POSTGRESDB_DATABASE=n8n
 ENV DB_POSTGRESDB_USER=n8n
 ENV DB_POSTGRESDB_PASSWORD=n8n
-
-# Install additional dependencies if needed
-RUN npm install -g n8n
 
 # Expose the port
 EXPOSE 5678

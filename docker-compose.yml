@@ -2,15 +2,17 @@ version: '3.8'
 
 services:
   n8n:
-    build:
-      context: ./docker/n8n
-      dockerfile: Dockerfile
+    image: n8nio/n8n:latest
     ports:
       - "5678:5678"
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
+      - N8N_SKIP_ONBOARDING=true
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=elo
+      - N8N_BASIC_AUTH_PASSWORD=elo
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=db
       - DB_POSTGRESDB_PORT=5432
@@ -18,7 +20,8 @@ services:
       - DB_POSTGRESDB_USER=n8n
       - DB_POSTGRESDB_PASSWORD=n8n
     volumes:
-      - ./n8n_data:/home/node/.n8n
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/files/workflows:ro
     depends_on:
       - db
 
