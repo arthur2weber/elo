@@ -1,5 +1,5 @@
 import AIAgent from '../ai/agent';
-import { readRecentLogs, readRecentRequests } from '../cli/utils/n8n-files';
+import { readRecentLogs, readRecentRequests } from '../cli/utils/storage-files';
 import { readAutomationFile, updateAutomationFile } from '../cli/utils/automation-files';
 import { buildPreferenceStats, getPreferenceSummary, readDecisions, shouldAutoApprove } from '../cli/utils/preferences';
 import { appendDecision } from '../cli/utils/preferences';

@@ -1,7 +1,5 @@
 node_modules
 dist
-postgres_data
-n8n_data
 .git
 .gitignore
 .env

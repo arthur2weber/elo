@@ -7,7 +7,7 @@ import {
   appendRequestLog,
   readRecentLogs,
   readRecentRequests
-} from '../src/cli/utils/n8n-files';
+} from '../src/cli/utils/storage-files';
 import {
   createAutomationFile,
   listAutomations,

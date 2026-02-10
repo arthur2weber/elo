@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { getLogsDir } from './n8n-files';
+import { getLogsDir } from './storage-files';
 
 export type DecisionEntry = {
   timestamp: string;

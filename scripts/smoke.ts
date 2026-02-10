@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { appendLogEntry, readRecentLogs } from '../src/cli/utils/n8n-files';
+import { appendLogEntry, readRecentLogs } from '../src/cli/utils/storage-files';
 import { createAutomationFile, listAutomations } from '../src/cli/utils/automation-files';
 import { appendDecision, getPreferenceSummary } from '../src/cli/utils/preferences';
 

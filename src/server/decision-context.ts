@@ -1,4 +1,4 @@
-import { LogEntry, RequestLogEntry } from '../cli/utils/n8n-files';
+import { LogEntry, RequestLogEntry } from '../cli/utils/storage-files';
 import { DeviceConfig } from '../cli/utils/device-registry';
 
 export type DeviceStatusSnapshot = {

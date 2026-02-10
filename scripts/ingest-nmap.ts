@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { appendLogEntry } from '../src/cli/utils/n8n-files';
+import { appendLogEntry } from '../src/cli/utils/storage-files';
 import http from 'http';
 import https from 'https';
 import net from 'net';

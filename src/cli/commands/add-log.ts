@@ -1,4 +1,4 @@
-import { appendLogEntry, LogEntry } from '../utils/n8n-files';
+import { appendLogEntry, LogEntry } from '../utils/storage-files';
 
 type AddLogOptions = {
   device?: string;

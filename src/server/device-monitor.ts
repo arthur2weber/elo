@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { appendLogEntry } from '../cli/utils/n8n-files';
+import { appendLogEntry } from '../cli/utils/storage-files';
 import { DeviceConfig, readDevices } from '../cli/utils/device-registry';
 
 type MonitorOptions = {

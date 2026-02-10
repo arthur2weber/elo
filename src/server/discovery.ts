@@ -1,7 +1,7 @@
 import os from 'os';
 import net from 'net';
 import dgram from 'dgram';
-import { appendLogEntry } from '../cli/utils/n8n-files';
+import { appendLogEntry } from '../cli/utils/storage-files';
 import { runGeminiPrompt } from '../ai/gemini';
 import { prompts } from '../ai/prompts';
 

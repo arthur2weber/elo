@@ -1,4 +1,4 @@
-import { appendRequestLog, RequestLogEntry } from '../utils/n8n-files';
+import { appendRequestLog, RequestLogEntry } from '../utils/storage-files';
 
 type AddRequestOptions = {
   request?: string;

@@ -9,7 +9,7 @@ export type AutomationFile = {
 
 const normalizeName = (name: string) => name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
-const getBasePath = () => process.env.ELO_FILES_PATH || process.env.N8N_FILES_PATH || process.cwd();
+const getBasePath = () => process.env.ELO_FILES_PATH || process.cwd();
 export const getAutomationsDir = () => path.join(getBasePath(), 'automations');
 
 const ensureDir = async (dirPath: string) => {

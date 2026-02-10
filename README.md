@@ -1,6 +1,6 @@
 # ELO Automation Engine
 
-ELO is a local automation engine that **observes events**, **asks Gemini for logic**, and **executes TypeScript automations**. It no longer depends on n8n. Instead, it generates clean `.ts` scripts in `automations/` and runs them directly.
+ELO is a local automation engine that **observes events**, **asks Gemini for logic**, and **executes TypeScript automations**. It generates clean `.ts` scripts in `automations/` and runs them directly.
 
 ## 🎯 Vision
 
