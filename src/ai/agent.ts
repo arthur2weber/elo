@@ -1,4 +1,4 @@
-import { runGeminiPrompt } from './gemini-cli';
+import { runGeminiPrompt } from './gemini';
 import { prompts } from './prompts';
 
 export type WorkflowSpec = {
