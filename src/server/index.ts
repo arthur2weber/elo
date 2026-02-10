@@ -1,7 +1,6 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import { createServer } from 'http';
-import { Server } from 'socket.io';
 import { startDeviceMonitor } from './device-monitor';
 import { startDecisionLoop } from './decision-loop';
 import { startDiscovery } from './discovery';
@@ -9,7 +8,6 @@ import { loadAutomations, runAutomations } from './automation_engine';
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server);
 
 app.use(bodyParser.json());
 

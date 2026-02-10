@@ -115,7 +115,7 @@ class AIAgent {
                 askAgain: typeof json.askAgain === 'boolean' ? json.askAgain : fallback.askAgain,
                 rationale: typeof json.rationale === 'string' ? json.rationale : fallback.rationale
             };
-        } catch (error) {
+        } catch {
             return fallback;
         }
     }

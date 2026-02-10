@@ -42,7 +42,7 @@ const loadLexicon = async (): Promise<Lexicon> => {
       deny: parsed.deny ?? DEFAULT_LEXICON.deny,
       askAgain: parsed.askAgain ?? DEFAULT_LEXICON.askAgain
     };
-  } catch (error) {
+  } catch {
     return DEFAULT_LEXICON;
   }
 };
@@ -56,8 +56,6 @@ const findMatch = (text: string, words: string[]) => {
   const normalized = normalize(text);
   return words.find((word) => normalized.includes(normalize(word))) ?? null;
 };
-
-const hasAny = (text: string, words: string[]) => Boolean(findMatch(text, words));
 
 const shouldAskAi = (reply: string) => {
   const length = reply.trim().length;

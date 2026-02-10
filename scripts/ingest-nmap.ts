@@ -284,7 +284,7 @@ const parsePorts = (portsSegment: string) => {
 
 const parseLine = (line: string) => {
   if (!line.startsWith('Host:')) return null;
-  const [hostPart, rest] = line.split('\t');
+  const [hostPart] = line.split('\t');
   if (!hostPart) return null;
   const hostMatch = hostPart.match(/Host:\s+([^\s]+)/);
   if (!hostMatch) return null;

@@ -8,7 +8,8 @@
     "build": "tsc",
     "cli": "ts-node src/cli/index.ts",
     "smoke": "ts-node scripts/smoke.ts",
-    "test": "ts-node scripts/test-core.ts"
+    "test": "ts-node scripts/test-core.ts",
+    "lint": "eslint \"{src,scripts}/**/*.ts\""
   },
   "dependencies": {
     "axios": "^1.13.5",
@@ -23,7 +24,10 @@
   "devDependencies": {
     "@types/body-parser": "^1.19.5",
     "@types/express": "^4.17.21",
-    "@types/node": "^16.11.7"
+    "@types/node": "^16.11.7",
+    "@typescript-eslint/eslint-plugin": "^8.55.0",
+    "@typescript-eslint/parser": "^8.55.0",
+    "eslint": "^8.57.0"
   },
   "license": "MIT"
 }

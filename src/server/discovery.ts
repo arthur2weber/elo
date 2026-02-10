@@ -292,7 +292,7 @@ const getHeaderText = (headers: Record<string, string>) =>
 const parseJsonResponse = (text: string) => {
   try {
     return JSON.parse(text) as Record<string, unknown>;
-  } catch (error) {
+  } catch {
     return null;
   }
 };
@@ -368,11 +368,11 @@ export const startDiscovery = (): DiscoveryHandle => {
   const pluginConfig = loadDiscoveryPluginConfig();
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
     const module = require('bonjour-service') as BonjourModule;
     bonjour = new module.Bonjour();
   } catch (error) {
-    console.warn('[ELO] mDNS discovery disabled: bonjour-service not installed.');
+    console.warn('[ELO] mDNS discovery disabled: bonjour-service not installed.', error);
   }
 
   if (bonjour) {
