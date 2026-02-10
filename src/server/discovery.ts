@@ -1,6 +1,8 @@
 import os from 'os';
 import net from 'net';
 import dgram from 'dgram';
+import fs from 'fs';
+import path from 'path';
 import { appendLogEntry } from '../cli/utils/storage-files';
 import { runGeminiPrompt } from '../ai/gemini';
 import { prompts } from '../ai/prompts';
@@ -17,6 +19,19 @@ type BonjourModule = {
 
 type DiscoveryHandle = {
   stop: () => void;
+};
+
+type DiscoveryPluginConfig = {
+  greeBroadcast?: {
+    enabled?: boolean;
+    ports?: number[];
+    intervalMs?: number;
+    payload?: string | Record<string, unknown>;
+  };
+  ssdp?: {
+    enabled?: boolean;
+    intervalMs?: number;
+  };
 };
 
 const knownDevices = new Set<string>();
@@ -98,6 +113,56 @@ const parsePayload = (value: string | undefined) => {
     return Buffer.from(trimmed, 'hex');
   }
   return Buffer.from(trimmed, 'utf8');
+};
+
+const loadDiscoveryPluginConfig = (): DiscoveryPluginConfig | null => {
+  const explicitPath = process.env.ELO_DISCOVERY_PLUGINS_FILE?.trim();
+  const configPath = explicitPath
+    ? path.resolve(explicitPath)
+    : path.resolve(process.cwd(), 'config', 'discovery.plugins.json');
+  if (!fs.existsSync(configPath)) {
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(configPath, 'utf8').trim();
+    if (!raw) return null;
+    return JSON.parse(raw) as DiscoveryPluginConfig;
+  } catch (error) {
+    console.warn('[ELO] Failed to parse discovery plugins config:', error);
+    return null;
+  }
+};
+
+const resolveBoolean = (envValue: string | undefined, configValue: boolean | undefined, fallback: boolean) => {
+  if (envValue !== undefined) return parseBoolean(envValue, fallback);
+  if (typeof configValue === 'boolean') return configValue;
+  return fallback;
+};
+
+const resolveNumber = (envValue: string | undefined, configValue: number | undefined, fallback: number) => {
+  if (envValue) return parseNumber(envValue, fallback);
+  if (typeof configValue === 'number' && Number.isFinite(configValue)) return configValue;
+  return fallback;
+};
+
+const resolvePortList = (
+  envValue: string | undefined,
+  configValue: number[] | undefined,
+  fallback: number[]
+) => {
+  if (envValue) return parsePortList(envValue, fallback);
+  if (Array.isArray(configValue) && configValue.length > 0) return configValue;
+  return fallback;
+};
+
+const resolvePayload = (
+  envValue: string | undefined,
+  configValue: string | Record<string, unknown> | undefined
+) => {
+  if (envValue) return parsePayload(envValue);
+  if (!configValue) return parsePayload(undefined);
+  if (typeof configValue === 'string') return parsePayload(configValue);
+  return Buffer.from(JSON.stringify(configValue), 'utf8');
 };
 
 const parseIPv4 = (value: string) => {
@@ -300,6 +365,7 @@ export const startDiscovery = (): DiscoveryHandle => {
   const intervals: NodeJS.Timeout[] = [];
   const sockets: Array<{ close?: () => void }> = [];
   const fingerprinted = new Set<string>();
+  const pluginConfig = loadDiscoveryPluginConfig();
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -452,17 +518,26 @@ export const startDiscovery = (): DiscoveryHandle => {
     }
   }
 
-  const greeBroadcastEnabled = parseBoolean(process.env.ELO_GREE_BROADCAST_ENABLED, true);
+  const greeBroadcastEnabled = resolveBoolean(
+    process.env.ELO_GREE_BROADCAST_ENABLED,
+    pluginConfig?.greeBroadcast?.enabled,
+    true
+  );
   if (greeBroadcastEnabled) {
-    const broadcastPorts = parsePortList(
+    const broadcastPorts = resolvePortList(
       process.env.ELO_GREE_BROADCAST_PORTS,
+      pluginConfig?.greeBroadcast?.ports,
       DEFAULT_GREE_BROADCAST_PORTS
     );
-    const broadcastIntervalMs = parseNumber(
+    const broadcastIntervalMs = resolveNumber(
       process.env.ELO_GREE_BROADCAST_INTERVAL_MS,
+      pluginConfig?.greeBroadcast?.intervalMs,
       DEFAULT_GREE_BROADCAST_INTERVAL_MS
     );
-    const payload = parsePayload(process.env.ELO_GREE_BROADCAST_PAYLOAD);
+    const payload = resolvePayload(
+      process.env.ELO_GREE_BROADCAST_PAYLOAD,
+      pluginConfig?.greeBroadcast?.payload
+    );
 
     const socket = dgram.createSocket('udp4');
     sockets.push(socket);
@@ -547,9 +622,17 @@ export const startDiscovery = (): DiscoveryHandle => {
     });
   }
 
-  const ssdpEnabled = parseBoolean(process.env.ELO_SSDP_ENABLED, true);
+  const ssdpEnabled = resolveBoolean(
+    process.env.ELO_SSDP_ENABLED,
+    pluginConfig?.ssdp?.enabled,
+    true
+  );
   if (ssdpEnabled) {
-    const ssdpIntervalMs = parseNumber(process.env.ELO_SSDP_INTERVAL_MS, DEFAULT_SSDP_INTERVAL_MS);
+    const ssdpIntervalMs = resolveNumber(
+      process.env.ELO_SSDP_INTERVAL_MS,
+      pluginConfig?.ssdp?.intervalMs,
+      DEFAULT_SSDP_INTERVAL_MS
+    );
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     sockets.push(socket);
 
