@@ -18,6 +18,50 @@ export type DecisionLoopOptions = {
 
 const DEFAULT_INTERVAL = 10000;
 
+const MAX_PROMPT_STRING_LENGTH = 2000;
+const MAX_PROMPT_ARRAY_LENGTH = 20;
+const MAX_PROMPT_OBJECT_KEYS = 20;
+const MAX_PROMPT_DEPTH = 4;
+
+const truncateString = (value: string, max = MAX_PROMPT_STRING_LENGTH) => {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}... (truncated ${value.length - max} chars)`;
+};
+
+const sanitizeForPrompt = (value: unknown, depth = 0): unknown => {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return truncateString(value);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (depth >= MAX_PROMPT_DEPTH) {
+    return '[truncated]';
+  }
+  if (Array.isArray(value)) {
+    const limited = value.slice(0, MAX_PROMPT_ARRAY_LENGTH).map((entry) => sanitizeForPrompt(entry, depth + 1));
+    if (value.length > MAX_PROMPT_ARRAY_LENGTH) {
+  limited.push(`... (${value.length - MAX_PROMPT_ARRAY_LENGTH} more items truncated)`);
+    }
+    return limited;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const limitedEntries = entries
+      .slice(0, MAX_PROMPT_OBJECT_KEYS)
+      .map(([key, entry]) => [key, sanitizeForPrompt(entry, depth + 1)] as const);
+    const sanitizedObject: Record<string, unknown> = Object.fromEntries(limitedEntries);
+    if (entries.length > MAX_PROMPT_OBJECT_KEYS) {
+      sanitizedObject.__truncated = `${entries.length - MAX_PROMPT_OBJECT_KEYS} additional keys truncated`;
+    }
+    return sanitizedObject;
+  }
+  return String(value);
+};
+
 const parseAutomations = () => {
   const value = process.env.ELO_DECISION_AUTOMATIONS || '';
   return value.split(',').map((entry) => entry.trim()).filter(Boolean);
@@ -59,16 +103,20 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
   }));
 
   const statusSnapshot = buildDeviceStatusSnapshot(logs);
-  const structuredContext = buildDecisionContext(devicesWithCapabilities, statusSnapshot, requests);
-  const decisionContext = formatDecisionContext(structuredContext);
+  const sanitizedLogs = logs.map((entry) => sanitizeForPrompt(entry)) as typeof logs;
+  const sanitizedRequests = requests.map((entry) => sanitizeForPrompt(entry)) as typeof requests;
+  const structuredContext = buildDecisionContext(devicesWithCapabilities, statusSnapshot, sanitizedRequests);
+  const sanitizedStructuredContext = sanitizeForPrompt(structuredContext) as typeof structuredContext;
+  const decisionContext = formatDecisionContext(sanitizedStructuredContext);
+  const trimmedPreferenceSummary = truncateString(preferenceSummary ?? '');
 
     await Promise.all(automations.map(async (automationName) => {
       const currentCode = (await readAutomationFile(automationName)).code;
       const updatedCode = await agent.updateAutomationCode({
         name: automationName,
         description: `Auto-updated by ELO decision loop.`,
-        preferences: `${preferenceSummary}\nStructuredContext: ${decisionContext}`,
-        logs,
+        preferences: `${trimmedPreferenceSummary}\nStructuredContext: ${decisionContext}`,
+        logs: sanitizedLogs,
         currentCode
       });
       const actionKey = `auto-${automationName}`;
@@ -82,7 +130,7 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
       const approval = await agent.decideApprovalPolicy({
         actionKey,
         suggestion: suggestionMessage,
-        history: preferenceSummary,
+        history: trimmedPreferenceSummary,
         context: decisionContext,
         fallback
       });

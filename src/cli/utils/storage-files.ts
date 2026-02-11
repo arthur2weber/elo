@@ -16,6 +16,18 @@ export type RequestLogEntry = {
   payload?: Record<string, unknown>;
 };
 
+export type AiUsageLogEntry = {
+  timestamp: string;
+  source: string;
+  tags: string[];
+  model: string;
+  promptChars: number;
+  responseChars: number;
+  latencyMs: number;
+  thinkingBudget?: number | null;
+  extra?: Record<string, unknown>;
+};
+
 const ensureDir = async (dirPath: string) => {
   await fs.mkdir(dirPath, { recursive: true });
 };
@@ -24,6 +36,7 @@ const getBasePath = () => process.env.ELO_FILES_PATH || process.cwd();
 
 export const getLogsDir = () => path.join(getBasePath(), 'logs');
 export const getRequestsLogPath = () => path.join(getLogsDir(), 'requests.jsonl');
+export const getAiUsageLogPath = () => path.join(getLogsDir(), 'ai-usage.jsonl');
 
 export const appendLogEntry = async (entry: LogEntry) => {
   const logsDir = getLogsDir();
@@ -78,6 +91,44 @@ export const readRecentRequests = async (limit = 50): Promise<RequestLogEntry[]>
     const file = await fs.readFile(logPath, 'utf-8');
     const lines = file.split('\n').filter(Boolean);
     return lines.slice(-limit).map((line) => JSON.parse(line) as RequestLogEntry);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+};
+
+export const appendAiUsageLog = async (entry: AiUsageLogEntry) => {
+  const logsDir = getLogsDir();
+  await ensureDir(logsDir);
+  const logPath = getAiUsageLogPath();
+  const tags = Array.isArray(entry.tags) ? Array.from(new Set(entry.tags.map((tag) => String(tag).trim()).filter(Boolean))) : [];
+  const payload = {
+    timestamp: entry.timestamp || new Date().toISOString(),
+    source: entry.source,
+    tags,
+    model: entry.model,
+    promptChars: Number.isFinite(entry.promptChars) ? Math.max(0, Math.floor(entry.promptChars)) : 0,
+    responseChars: Number.isFinite(entry.responseChars) ? Math.max(0, Math.floor(entry.responseChars)) : 0,
+    latencyMs: Number.isFinite(entry.latencyMs) ? Math.max(0, Math.floor(entry.latencyMs)) : 0,
+    thinkingBudget: typeof entry.thinkingBudget === 'number' && Number.isFinite(entry.thinkingBudget)
+      ? Math.max(0, Math.floor(entry.thinkingBudget))
+      : null,
+    extra: entry.extra ?? {}
+  };
+  await fs.appendFile(logPath, `${JSON.stringify(payload)}\n`);
+  return { logPath, entry: payload };
+};
+
+export const readRecentAiUsage = async (limit = 200): Promise<AiUsageLogEntry[]> => {
+  const logsDir = getLogsDir();
+  await ensureDir(logsDir);
+  const logPath = getAiUsageLogPath();
+  try {
+    const file = await fs.readFile(logPath, 'utf-8');
+    const lines = file.split('\n').filter(Boolean);
+    return lines.slice(-limit).map((line) => JSON.parse(line) as AiUsageLogEntry);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return [];

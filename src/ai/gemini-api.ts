@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { appendAiUsageLog } from '../cli/utils/storage-files';
 
 const DEFAULT_MODEL = 'gemini-1.5-flash';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
@@ -7,10 +8,17 @@ const getApiKey = () => process.env.GEMINI_API_KEY;
 const getModel = (override?: string) => override || process.env.GEMINI_API_MODEL || DEFAULT_MODEL;
 const getBaseUrl = () => process.env.GEMINI_API_BASE_URL || DEFAULT_BASE_URL;
 
+export type GeminiRequestMetadata = {
+    source: string;
+    tags?: string[];
+    extra?: Record<string, unknown>;
+};
+
 type GeminiApiOptions = {
     thinkingBudget?: number;
     model?: string;
     maxOutputTokens?: number;
+    metadata?: GeminiRequestMetadata;
 };
 
 const buildUrl = (modelOverride?: string) => {
@@ -24,7 +32,8 @@ const buildUrl = (modelOverride?: string) => {
 };
 
 export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptions = {}): Promise<string> => {
-    const url = buildUrl(options.model);
+    const model = getModel(options.model);
+    const url = buildUrl(model);
     const thinkingBudget = options.thinkingBudget;
     const payload: Record<string, unknown> = {
         contents: [
@@ -54,6 +63,7 @@ export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptio
         console.log('[ELO] Gemini payload:', JSON.stringify(payload, null, 2));
     }
 
+    const startedAt = Date.now();
     const response = await axios.post(
         url,
         payload,
@@ -73,6 +83,26 @@ export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptio
     if (!text) {
         throw new Error('Gemini API returned an empty response.');
     }
+    const trimmed = text.trim();
 
-    return text.trim();
+    if (options.metadata?.source) {
+        const latencyMs = Date.now() - startedAt;
+        appendAiUsageLog({
+            timestamp: new Date().toISOString(),
+            source: options.metadata.source,
+            tags: options.metadata.tags ?? [],
+            model,
+            promptChars: prompt.length,
+            responseChars: trimmed.length,
+            latencyMs,
+            thinkingBudget: typeof thinkingBudget === 'number' ? thinkingBudget : null,
+            extra: options.metadata.extra
+        }).catch((error) => {
+            if (process.env.ELO_DEBUG_PROMPT === 'true') {
+                console.warn('[ELO] Failed to log AI usage:', error);
+            }
+        });
+    }
+
+    return trimmed;
 };

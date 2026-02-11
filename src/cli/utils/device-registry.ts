@@ -13,6 +13,7 @@ export type DeviceConfig = {
   protocol?: string;
   ip?: string;
   mac?: string;
+  integrationStatus?: 'pending' | 'ready' | 'unknown';
 };
 
 const getDevicesPath = () => path.join(getLogsDir(), 'devices.json');
@@ -147,9 +148,21 @@ const performAddDevice = async (device: DeviceConfig) => {
 
     existing.protocol = device.protocol || existing.protocol;
     existing.mac = device.mac || existing.mac;
+
+    if (device.integrationStatus) {
+      if (device.integrationStatus === 'ready' || !existing.integrationStatus) {
+        existing.integrationStatus = device.integrationStatus;
+      } else if (existing.integrationStatus !== 'ready') {
+        existing.integrationStatus = device.integrationStatus;
+      }
+    }
+
+    if (device.id && existing.id !== device.id && existing.id?.startsWith('pending_')) {
+      existing.id = device.id;
+    }
     
   } else {
-    devices.push(device);
+    devices.push({ ...device });
   }
   
   await ensureLogsDir();

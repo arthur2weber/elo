@@ -52,7 +52,16 @@ const computeThinkingBudgetFromJson = (payload: Record<string, unknown>) => {
 class AIAgent {
     async processInput(input: string): Promise<string> {
         const prompt = `${prompts.welcome}\n\n${input}`;
-        return runGeminiPrompt(prompt, { thinkingBudget: 0 });
+        return runGeminiPrompt(prompt, {
+            thinkingBudget: 0,
+            metadata: {
+                source: 'chat:welcome',
+                tags: ['chat', 'assistant'],
+                extra: {
+                    userInputChars: input.length
+                }
+            }
+        });
     }
 
     async processInputWithContext(input: { message: string; context: string; history?: string }): Promise<string> {
@@ -64,13 +73,34 @@ class AIAgent {
         if (process.env.ELO_DEBUG_PROMPT === 'true') {
             console.log('[ELO] Chat prompt:', prompt);
         }
-        return runGeminiPrompt(prompt, { thinkingBudget: 0 });
+        return runGeminiPrompt(prompt, {
+            thinkingBudget: 0,
+            metadata: {
+                source: 'chat:contextual',
+                tags: ['chat', 'assistant'],
+                extra: {
+                    messageChars: input.message.length,
+                    contextChars: input.context.length,
+                    historyChars: input.history ? input.history.length : 0
+                }
+            }
+        });
     }
 
     async generateAutomationCode(spec: AutomationSpec): Promise<string> {
         const prompt = prompts.workflowJson(spec.name, spec.description);
         const thinkingBudget = computeThinkingBudgetFromJson({ name: spec.name, description: spec.description ?? '' });
-        const response = await runGeminiPrompt(prompt, { thinkingBudget });
+        const response = await runGeminiPrompt(prompt, {
+            thinkingBudget,
+            metadata: {
+                source: 'automation:generate',
+                tags: ['automation', 'workflow'],
+                extra: {
+                    nameLength: spec.name.length,
+                    descriptionLength: spec.description ? spec.description.length : 0
+                }
+            }
+        });
         return this.extractCode(response);
     }
 
@@ -89,7 +119,19 @@ class AIAgent {
             logs: spec.logs,
             currentCode: spec.currentCode
         });
-        const response = await runGeminiPrompt(prompt, { thinkingBudget });
+        const response = await runGeminiPrompt(prompt, {
+            thinkingBudget,
+            metadata: {
+                source: 'automation:update',
+                tags: ['automation', 'workflow'],
+                extra: {
+                    nameLength: spec.name.length,
+                    descriptionLength: spec.description ? spec.description.length : 0,
+                    logsCount: spec.logs.length,
+                    currentCodeChars: spec.currentCode.length
+                }
+            }
+        });
         return this.extractCode(response);
     }
 
@@ -119,7 +161,19 @@ class AIAgent {
                 history: input.history,
                 context: input.context
             });
-            const response = await runGeminiPrompt(prompt, { thinkingBudget: 0 });
+            const response = await runGeminiPrompt(prompt, {
+                thinkingBudget: 0,
+                metadata: {
+                    source: 'automation:approval',
+                    tags: ['automation', 'approval'],
+                    extra: {
+                        actionKeyChars: input.actionKey.length,
+                        suggestionChars: input.suggestion.length,
+                        historyChars: input.history ? input.history.length : 0,
+                        contextChars: input.context.length
+                    }
+                }
+            });
             const json = this.extractJson(response);
             return {
                 autoApprove: Boolean(json.autoApprove),

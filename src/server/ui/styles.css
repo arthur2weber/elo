@@ -85,6 +85,12 @@ main {
   margin-bottom: 16px;
 }
 
+.card h4 {
+  margin: 12px 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .muted {
   color: var(--muted);
 }
@@ -148,6 +154,12 @@ main {
   border: 1px solid var(--border);
   background: #0b0e14;
   color: var(--text);
+}
+
+.ai-tag-breakdown {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
 }
 
 .chat-form button,

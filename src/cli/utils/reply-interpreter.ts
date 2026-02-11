@@ -103,7 +103,19 @@ export const interpretUserReply = async (input: {
       reply: input.reply,
       context: input.context
     });
-    const response = await runGeminiPrompt(prompt, { thinkingBudget: 0 });
+    const response = await runGeminiPrompt(prompt, {
+      thinkingBudget: 0,
+      metadata: {
+        source: 'chat:reply_interpreter',
+        tags: ['chat', 'approval'],
+        extra: {
+          questionChars: input.question.length,
+          replyChars: input.reply.length,
+          contextChars: input.context ? input.context.length : 0,
+          hasInitialMatch: true
+        }
+      }
+    });
     return parseAiResponse(response);
   }
 
@@ -137,7 +149,19 @@ export const interpretUserReply = async (input: {
       reply: input.reply,
       context: input.context
     });
-    const response = await runGeminiPrompt(prompt, { thinkingBudget: 0 });
+    const response = await runGeminiPrompt(prompt, {
+      thinkingBudget: 0,
+      metadata: {
+        source: 'chat:reply_interpreter',
+        tags: ['chat', 'approval'],
+        extra: {
+          questionChars: input.question.length,
+          replyChars: input.reply.length,
+          contextChars: input.context ? input.context.length : 0,
+          hasInitialMatch: false
+        }
+      }
+    });
     const parsed = parseAiResponse(response);
     if (parsed.matchedTerm) {
       const normalized = normalize(parsed.matchedTerm);

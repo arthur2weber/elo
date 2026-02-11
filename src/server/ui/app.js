@@ -2,6 +2,9 @@ const statusBadge = document.getElementById('status-badge');
 const overviewSummary = document.getElementById('overview-summary');
 const overviewEvents = document.getElementById('overview-events');
 const overviewPreferences = document.getElementById('overview-preferences');
+const overviewAiSummary = document.getElementById('overview-ai-summary');
+const overviewAiTags = document.getElementById('overview-ai-tags');
+const overviewAiRecent = document.getElementById('overview-ai-recent');
 const devicesList = document.getElementById('devices-list');
 const devicesStatus = document.getElementById('devices-status');
 const discoveryList = document.getElementById('discovery-list');
@@ -36,11 +39,61 @@ const setStatus = (text, ok = true) => {
 };
 
 const formatJson = (value) => JSON.stringify(value, null, 2);
+const formatNumber = (value) => Number(value || 0).toLocaleString('pt-BR');
+const formatDateTime = (value) => {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+};
 
 const renderOverview = (data) => {
   overviewSummary.textContent = `Devices: ${data.counts.devices}\nLogs: ${data.counts.logs}\nRequests: ${data.counts.requests}\nPending: ${data.counts.pendingSuggestions}`;
   overviewEvents.textContent = formatJson(data.logs.slice(-8));
   overviewPreferences.textContent = data.preferenceSummary || 'Sem dados.';
+};
+
+const renderAiUsage = (data) => {
+  if (!overviewAiSummary || !overviewAiTags || !overviewAiRecent) {
+    return;
+  }
+
+  const summary = data?.summary;
+  if (!summary || summary.totalRequests === 0) {
+    overviewAiSummary.textContent = 'Sem chamadas registradas.';
+    overviewAiTags.innerHTML = '<div class="muted">Sem tags recentes.</div>';
+    overviewAiRecent.textContent = '[]';
+    return;
+  }
+
+  const summaryLines = [
+    `Janela: ${formatDateTime(summary.windowStart)} → ${formatDateTime(summary.windowEnd)}`,
+    `Chamadas: ${formatNumber(summary.totalRequests)}`,
+    `Prompt chars: ${formatNumber(summary.totalPromptChars)}`,
+    `Resposta chars: ${formatNumber(summary.totalResponseChars)}`,
+    `Latência média: ${formatNumber(summary.avgLatencyMs)} ms`
+  ];
+  overviewAiSummary.textContent = summaryLines.join('\n');
+
+  const topTags = Array.isArray(data.byTag) ? data.byTag.slice(0, 5) : [];
+  if (topTags.length === 0) {
+    overviewAiTags.innerHTML = '<div class="muted">Sem tags recentes.</div>';
+  } else {
+    overviewAiTags.innerHTML = topTags
+      .map((entry) => `<div><strong>${entry.tag}</strong> • ${formatNumber(entry.requests)} req · ${formatNumber(entry.promptChars)} chars</div>`)
+      .join('');
+  }
+
+  const recentSample = Array.isArray(data.recent)
+    ? data.recent.slice(0, 5).map((entry) => ({
+        timestamp: entry.timestamp,
+        source: entry.source,
+        tags: entry.tags,
+        promptChars: entry.promptChars,
+        responseChars: entry.responseChars,
+        latencyMs: entry.latencyMs
+      }))
+    : [];
+  overviewAiRecent.textContent = recentSample.length ? formatJson(recentSample) : '[]';
 };
 
 const renderDevices = (data) => {
@@ -90,6 +143,11 @@ const loadOverview = async () => {
   renderOverview(data);
 };
 
+const loadAiUsage = async () => {
+  const data = await fetchJson('/api/ai-usage?limit=250');
+  renderAiUsage(data);
+};
+
 const loadDevices = async () => {
   const data = await fetchJson('/api/devices');
   renderDevices(data);
@@ -113,7 +171,14 @@ const loadConfig = async () => {
 const refreshAll = async () => {
   try {
     setStatus('Conectado');
-    await Promise.all([loadOverview(), loadDevices(), loadDiscovery(), loadSuggestions(), loadConfig()]);
+    await Promise.all([
+      loadOverview(),
+      loadAiUsage(),
+      loadDevices(),
+      loadDiscovery(),
+      loadSuggestions(),
+      loadConfig()
+    ]);
   } catch (error) {
     setStatus('Erro ao conectar', false);
   }

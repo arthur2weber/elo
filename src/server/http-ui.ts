@@ -3,7 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import AIAgent from '../ai/agent';
 import { readDevices } from '../cli/utils/device-registry';
-import { appendRequestLog, readRecentLogs, readRecentRequests } from '../cli/utils/storage-files';
+import { appendRequestLog, readRecentAiUsage, readRecentLogs, readRecentRequests } from '../cli/utils/storage-files';
+import type { AiUsageLogEntry } from '../cli/utils/storage-files';
 import { getLatestSuggestions, getPendingSuggestions } from '../cli/utils/suggestions';
 import { getPreferenceSummary } from '../cli/utils/preferences';
 import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
@@ -119,6 +120,81 @@ const buildOverview = async (limit: number) => {
   };
 };
 
+const buildAiUsageReport = async (limit: number) => {
+  const entries = await readRecentAiUsage(limit);
+  if (entries.length === 0) {
+    return {
+      summary: {
+        totalRequests: 0,
+        totalPromptChars: 0,
+        totalResponseChars: 0,
+        avgPromptChars: 0,
+        avgResponseChars: 0,
+        avgLatencyMs: 0,
+        windowStart: null,
+        windowEnd: null
+      },
+      byTag: [],
+      bySource: [],
+      recent: [] as AiUsageLogEntry[]
+    };
+  }
+
+  let totalPromptChars = 0;
+  let totalResponseChars = 0;
+  let totalLatencyMs = 0;
+
+  const byTag = new Map<string, { tag: string; requests: number; promptChars: number; responseChars: number; latencyMs: number }>();
+  const bySource = new Map<string, { source: string; requests: number; promptChars: number; responseChars: number; latencyMs: number }>();
+
+  entries.forEach((entry) => {
+    const promptChars = Number.isFinite(entry.promptChars) ? entry.promptChars : 0;
+    const responseChars = Number.isFinite(entry.responseChars) ? entry.responseChars : 0;
+    const latencyMs = Number.isFinite(entry.latencyMs) ? entry.latencyMs : 0;
+
+    totalPromptChars += promptChars;
+    totalResponseChars += responseChars;
+    totalLatencyMs += latencyMs;
+
+    const sourceKey = entry.source || 'unknown';
+    const sourceStats = bySource.get(sourceKey) ?? { source: sourceKey, requests: 0, promptChars: 0, responseChars: 0, latencyMs: 0 };
+    sourceStats.requests += 1;
+    sourceStats.promptChars += promptChars;
+    sourceStats.responseChars += responseChars;
+    sourceStats.latencyMs += latencyMs;
+    bySource.set(sourceKey, sourceStats);
+
+    const tags = Array.isArray(entry.tags) && entry.tags.length ? entry.tags : ['untagged'];
+    tags.forEach((tag) => {
+      const safeTag = tag || 'untagged';
+      const tagStats = byTag.get(safeTag) ?? { tag: safeTag, requests: 0, promptChars: 0, responseChars: 0, latencyMs: 0 };
+      tagStats.requests += 1;
+      tagStats.promptChars += promptChars;
+      tagStats.responseChars += responseChars;
+      tagStats.latencyMs += latencyMs;
+      byTag.set(safeTag, tagStats);
+    });
+  });
+
+  const average = (total: number, count: number) => (count > 0 ? Math.round(total / count) : 0);
+
+  return {
+    summary: {
+      totalRequests: entries.length,
+      totalPromptChars,
+      totalResponseChars,
+      avgPromptChars: average(totalPromptChars, entries.length),
+      avgResponseChars: average(totalResponseChars, entries.length),
+      avgLatencyMs: average(totalLatencyMs, entries.length),
+      windowStart: entries[0]?.timestamp ?? null,
+      windowEnd: entries[entries.length - 1]?.timestamp ?? null
+    },
+    byTag: Array.from(byTag.values()).sort((a, b) => b.promptChars - a.promptChars || b.requests - a.requests),
+    bySource: Array.from(bySource.values()).sort((a, b) => b.promptChars - a.promptChars || b.requests - a.requests),
+    recent: entries.slice(-20).reverse()
+  };
+};
+
 export const registerHttpUi = (app: express.Express) => {
   const uiDir = resolveUiDir();
   const agent = new AIAgent();
@@ -150,6 +226,16 @@ export const registerHttpUi = (app: express.Express) => {
       const logs = await readRecentLogs(limit);
       const discovery = logs.filter((entry) => entry.event === 'device_discovery');
       res.json({ success: true, data: discovery });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.get('/api/ai-usage', async (req, res) => {
+    try {
+      const limit = parseLimit(req.query.limit, 200);
+      const usage = await buildAiUsageReport(limit);
+      res.json({ success: true, data: usage });
     } catch (error) {
       res.status(500).json({ success: false, error: (error as Error).message });
     }

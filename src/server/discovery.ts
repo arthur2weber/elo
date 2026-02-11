@@ -41,7 +41,8 @@ const knownDevices = new Set<string>();
 const isIpAlreadyRegistered = async (ip: string): Promise<boolean> => {
   try {
     const devices = await readDevices();
-    return devices.some(device => device.ip === ip);
+    const normalizedIp = ip.trim();
+    return devices.some((device) => device.ip?.trim() === normalizedIp);
   } catch (error) {
     console.warn('[ELO] Failed to check registered devices:', error);
     return false;
@@ -365,7 +366,20 @@ const runFingerprinting = async (input: {
   model: string;
 }) => {
   const prompt = buildFingerprintPrompt(input);
-  const response = await runGeminiPrompt(prompt, { model: input.model, thinkingBudget: 0 });
+  const response = await runGeminiPrompt(prompt, {
+    model: input.model,
+    thinkingBudget: 0,
+    metadata: {
+      source: 'discovery:fingerprint',
+      tags: ['discovery', 'fingerprint'],
+      extra: {
+        port: input.port,
+        protocol: input.protocol,
+        hasHint: Boolean(input.hint),
+        rawHexChars: input.rawHex.length
+      }
+    }
+  });
   const parsed = parseJsonResponse(response);
   return parsed || { raw: response };
 };
@@ -415,8 +429,18 @@ export const startDiscovery = (): DiscoveryHandle => {
     mdnsTypes.forEach((entry) => {
       const browser = bonjour.find(entry);
       browsers.push(browser);
-      browser.on('up', (service: any) => {
-        const address = Array.isArray(service.addresses) ? service.addresses[0] : undefined;
+      browser.on('up', async (service: any) => {
+        const addressList = Array.isArray(service.addresses) ? service.addresses : [];
+        const address = addressList.find((item: string) => net.isIP(item) === 4) ?? addressList[0];
+        if (address) {
+          const alreadyRegistered = await isIpAlreadyRegistered(address.trim());
+          if (alreadyRegistered) {
+            console.log(
+              `[ELO] Skipping mDNS service ${service.name || '(unknown)'} from ${address} - already registered in devices`
+            );
+            return;
+          }
+        }
         const key = buildDeviceKey({
           source: 'mdns',
           name: service.name,
