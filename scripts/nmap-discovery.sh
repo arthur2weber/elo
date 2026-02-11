@@ -43,7 +43,11 @@ if [[ ! -s "$HOSTS_FILE" ]]; then
   exit 0
 fi
 
-nmap -sS -sU -p "T:$TCP_PORTS,U:$UDP_PORTS" -iL "$HOSTS_FILE" -oG "$NMAP_OUTPUT"
+# Need root for MAC address detection usually, unless we parse ARP cache or use sudo.
+# Assuming container has capabilities NET_ADMIN/NET_RAW as set in compose.
+nmap -sn "${SUBNETS[@]}" -oX "$HOST_SCAN_XML"
+
+nmap -sS -sU -p "T:$TCP_PORTS,U:$UDP_PORTS" -iL "$HOSTS_FILE" -oG "$NMAP_OUTPUT" --privileged
 
 npx --yes ts-node "$ROOT_DIR/scripts/ingest-nmap.ts" --input "$HOST_SCAN_XML"
 npx --yes ts-node "$ROOT_DIR/scripts/ingest-nmap.ts" --input "$HOST_SCAN_OUTPUT"

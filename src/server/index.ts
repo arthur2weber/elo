@@ -5,11 +5,14 @@ import { startDeviceMonitor } from './device-monitor';
 import { startDecisionLoop } from './decision-loop';
 import { startDiscovery } from './discovery';
 import { loadAutomations, runAutomations } from './automation_engine';
+import { registerHttpUi } from './http-ui';
 
 const app = express();
 const server = createServer(app);
 
 app.use(bodyParser.json());
+
+registerHttpUi(app);
 
 app.post('/events', async (req, res) => {
     const event = req.body;
@@ -18,11 +21,7 @@ app.post('/events', async (req, res) => {
     res.json({ success: true, processed: true });
 });
 
-app.get('/', (req: express.Request, res: express.Response) => {
-    res.send('Welcome to the ELO Automation Engine!');
-});
-
-// Add additional routes and middleware as needed
+// API routes are registered in registerHttpUi.
 
 const PORT = process.env.PORT || 3000;
 
@@ -57,4 +56,7 @@ const startServer = async () => {
     }
 };
 
-startServer();
+startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+});

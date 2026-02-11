@@ -22,6 +22,7 @@ services:
       - GEMINI_API_MODEL=${GEMINI_API_MODEL:-}
       - GEMINI_API_BASE_URL=${GEMINI_API_BASE_URL:-}
       - THINKING_BUDGET=${THINKING_BUDGET:-}
+      - ELO_DECISION_AUTOMATIONS=main
       - CLOUDSDK_CONFIG=/gcloud
     volumes:
       - ./:/app

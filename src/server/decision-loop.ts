@@ -5,6 +5,8 @@ import { buildPreferenceStats, getPreferenceSummary, readDecisions, shouldAutoAp
 import { appendDecision } from '../cli/utils/preferences';
 import { appendSuggestion } from '../cli/utils/suggestions';
 import { readDevices } from '../cli/utils/device-registry';
+import { promises as fs } from 'fs'; // Import fs
+import path from 'path'; // Import path
 import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
 
 export type DecisionLoopOptions = {
@@ -40,8 +42,24 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
   const preferenceSummary = await getPreferenceSummary();
   const preferenceStats = buildPreferenceStats(await readDecisions(200));
   const devices = await readDevices();
+
+  // Enrich devices with capabilities from driver files
+  const devicesWithCapabilities = await Promise.all(devices.map(async (device) => {
+      try {
+          const driverPath = path.join(process.cwd(), 'logs', 'drivers', `${device.id}.json`);
+          const driverContent = await fs.readFile(driverPath, 'utf-8');
+          const driver = JSON.parse(driverContent);
+          return {
+              ...device,
+              capabilities: Object.keys(driver.actions || {})
+          };
+      } catch (e) {
+          return { ...device, capabilities: [] };
+      }
+  }));
+
   const statusSnapshot = buildDeviceStatusSnapshot(logs);
-  const structuredContext = buildDecisionContext(devices, statusSnapshot, requests);
+  const structuredContext = buildDecisionContext(devicesWithCapabilities, statusSnapshot, requests);
   const decisionContext = formatDecisionContext(structuredContext);
 
     await Promise.all(automations.map(async (automationName) => {

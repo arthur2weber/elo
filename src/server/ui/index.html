@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ELO Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div>
+        <h1>ELO Console</h1>
+        <p>Visão geral, chat e configurações rápidas.</p>
+      </div>
+      <div class="status" id="status-badge">Conectando...</div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="overview">Visão</button>
+      <button class="tab" data-tab="chat">Chat</button>
+      <button class="tab" data-tab="devices">Dispositivos</button>
+      <button class="tab" data-tab="discovery">Descoberta</button>
+      <button class="tab" data-tab="config">Keys</button>
+      <button class="tab" data-tab="suggestions">Sugestões</button>
+    </nav>
+
+    <main>
+      <section class="panel active" id="panel-overview">
+        <div class="grid">
+          <div class="card">
+            <h3>Resumo</h3>
+            <div id="overview-summary" class="muted">Carregando...</div>
+          </div>
+          <div class="card">
+            <h3>Preferências</h3>
+            <pre id="overview-preferences" class="code-block">Carregando...</pre>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Eventos recentes</h3>
+          <pre id="overview-events" class="code-block">Carregando...</pre>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-chat">
+        <div class="card">
+          <h3>Fale com o ELO</h3>
+          <div id="chat-thread" class="chat-thread"></div>
+          <form id="chat-form" class="chat-form">
+            <input id="chat-input" placeholder="Digite sua pergunta" autocomplete="off" />
+            <button type="submit">Enviar</button>
+          </form>
+          <p class="muted">As mensagens são registradas em logs e podem alimentar o loop de decisão.</p>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-devices">
+        <div class="card">
+          <h3>Dispositivos cadastrados</h3>
+          <div id="devices-list" class="list"></div>
+        </div>
+        <div class="card">
+          <h3>Último status</h3>
+          <pre id="devices-status" class="code-block">Carregando...</pre>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-discovery">
+        <div class="card">
+          <h3>Descobertas recentes</h3>
+          <pre id="discovery-list" class="code-block">Carregando...</pre>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-config">
+        <div class="card">
+          <h3>Chaves e variáveis</h3>
+          <div id="config-status" class="list"></div>
+          <form id="config-form" class="config-form">
+            <label>
+              GEMINI_API_KEY
+              <input name="GEMINI_API_KEY" placeholder="Cole a chave" type="password" />
+            </label>
+            <label>
+              GEMINI_API_BASE_URL
+              <input name="GEMINI_API_BASE_URL" placeholder="https://generativelanguage.googleapis.com/v1beta" />
+            </label>
+            <label>
+              GEMINI_API_MODEL
+              <input name="GEMINI_API_MODEL" placeholder="gemini-2.5-flash" />
+            </label>
+            <label>
+              THINKING_BUDGET
+              <input name="THINKING_BUDGET" placeholder="-1" />
+            </label>
+            <button type="submit">Salvar configuração</button>
+          </form>
+          <p class="muted">Após salvar, reinicie o servidor para aplicar novas variáveis.</p>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-suggestions">
+        <div class="card">
+          <h3>Sugestões recentes</h3>
+          <pre id="suggestions-list" class="code-block">Carregando...</pre>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

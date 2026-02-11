@@ -20,10 +20,20 @@ import { interpretUserReply } from '../src/cli/utils/reply-interpreter';
 import { addDevice, readDevices } from '../src/cli/utils/device-registry';
 import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from '../src/server/decision-context';
 import { validateWorkflowDevices } from '../src/server/device-validator';
+import { maskConfigValue, readConfig, writeConfig } from '../src/server/config';
 
 const run = async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'elo-core-test-'));
   process.env.ELO_FILES_PATH = tmpDir;
+
+  const tmpConfigDir = await mkdtemp(path.join(os.tmpdir(), 'elo-config-test-'));
+  await writeConfig({
+    GEMINI_API_KEY: 'test-key-123456789',
+    GEMINI_API_MODEL: 'gemini-2.5-flash'
+  }, { basePath: tmpConfigDir });
+  const configSnapshot = await readConfig({ basePath: tmpConfigDir, keys: ['GEMINI_API_KEY', 'GEMINI_API_MODEL'] });
+  assert.strictEqual(configSnapshot.values.GEMINI_API_KEY, 'test-key-123456789');
+  assert.ok(maskConfigValue(configSnapshot.values.GEMINI_API_KEY).includes('...'));
 
   const automation = await createAutomationFile('Core Test Automation', 'export default async function() {}');
   assert.ok(automation.filePath.endsWith('.ts'), 'Automation file should be created');
@@ -133,6 +143,7 @@ const run = async () => {
   assert.ok('matchedTerm' in interpreted);
 
   await rm(tmpDir, { recursive: true, force: true });
+  await rm(tmpConfigDir, { recursive: true, force: true });
   console.log('Core tests passed.');
 };
 

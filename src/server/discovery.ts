@@ -6,6 +6,7 @@ import path from 'path';
 import { appendLogEntry } from '../cli/utils/storage-files';
 import { runGeminiPrompt } from '../ai/gemini';
 import { prompts } from '../ai/prompts';
+import { triggerDriverGeneration } from './generators/driver-generator';
 import {
   defaultBroadcastProfiles,
   defaultPortSignatures,
@@ -82,6 +83,9 @@ const logDiscovery = async (payload: {
     event: 'device_discovery',
     payload
   });
+
+  // Trigger AI analysis to propose a driver for this new device
+  await triggerDriverGeneration(payload);
 };
 
 const parsePortList = (value: string | undefined, fallback: number[]) => {
@@ -258,7 +262,7 @@ const buildScanTargets = () => {
   );
 };
 
-const probeTcpPort = (ip: string, port: number, timeoutMs: number) =>
+export const probeTcpPort = (ip: string, port: number, timeoutMs: number) =>
   new Promise<boolean>((resolve) => {
     const socket = new net.Socket();
     let done = false;

@@ -72,6 +72,28 @@ export const prompts = {
             input.context ? `Context: ${input.context}.` : ''
         ].join('\n');
     },
+    chatButler: (input: {
+        message: string;
+        context: string;
+        history?: string;
+    }) => {
+        return [
+            'Você é o ELO, o mordomo digital de uma casa inteligente.',
+            'Responda em português brasileiro, com tom de mordomo: educado, direto e prestativo.',
+            'Retorne SOMENTE JSON válido. Não use Markdown, nem texto fora do JSON.',
+            'Formato obrigatório: { "action": string | null, "message": string }',
+            'Ação deve ser curta e explícita (ex: "ar_sala=on", "luzes_quarto=off").',
+            'Contexto de dispositivos é sua ÚNICA fonte de verdade. ASSUMA que você TEM acesso via esse JSON.',
+            'Se o dispositivo não estiver no contexto, diga que não o encontrou (não diga que não tem acesso).',
+            'Se o dispositivo estiver no contexto, use o status dele.',
+            'Nunca diga "modelo de linguagem", "não tenho acesso", "sou uma IA" ou "mundo físico".',
+            'Se for uma pergunta de status (ex: "está ligado?"), verifique o JSON Contexto e responda SIM ou NÃO.',
+            'Mensagem curta para TTS: no máximo 2 frases e até 240 caracteres.',
+            input.history ? `Histórico da conversa (mais recente por último): ${input.history}` : '',
+            `Contexto JSON: ${input.context}`,
+            `Mensagem do usuário: ${input.message}`
+        ].filter(Boolean).join('\n');
+    },
     fingerprintDevice: (input: {
         ip: string;
         port: number;
@@ -89,6 +111,35 @@ export const prompts = {
             `Protocol: ${input.protocol}.`,
             input.hint ? `Hint: ${input.hint}.` : '',
             `RawHex: ${input.rawHex}`
+        ].join('\n');
+    },
+    generateDriver: (input: {
+        ip: string;
+        port: number;
+        protocol: string;
+        rawInfo: string;
+        previousAttemptError?: string;
+    }) => {
+        return [
+            'You are a smart home connectivity assistant.',
+            'Your task is to generate a declarative HTTP driver configuration for the discovered device.',
+            'Do NOT generate TypeScript code. Generate a JSON configuration that a generic HTTP client can use.',
+            'Return JSON only: { "deviceName": string, "deviceType": string, "actions": Record<string, { method: "GET"|"POST"|"PUT", url: string, headers?: Record<string, string>, body?: string }> }.',
+            'Rules:',
+            '- Infer the likely API endpoints based on the device metadata, standard IoT protocols (Hue, Tuya, Tasmota, Shelly, etc), or available ports.',
+            '- Typically useful actions: "powerOn", "powerOff", "toggle", "getStatus", "getVolume", "setVolume".',
+            '- IF THE DEVICE IS A TV (e.g. Samsung, LG, Android TV):',
+            '  1. You MUST include "volumeUp", "volumeDown", "mute".',
+            '  2. You MUST include "setVolume" and "getVolume" if technically possible (Commonly via UPnP RenderingControl on port 9197 for Samsung, or port 55000/converted REST).',
+            '  3. For Samsung TVs specifically: Use port 8001/api/v2/channels/samsung.remote.control for keys, AND UPnP port 9197 (urn:schemas-upnp-org:service:RenderingControl:1) for "setVolume" (action SetVolume) and "getVolume" (action GetVolume).',
+            '- The "url" should be a full HTTP URL.',
+            '- If the device requires a body, specify it as a stringified JSON or plain text.',
+             `Input Data:`,
+            `IP: ${input.ip}`,
+            `Port: ${input.port}`,
+            `Protocol: ${input.protocol}`,
+            `Raw Metadata: ${input.rawInfo}`,
+            input.previousAttemptError ? `\nCRITICAL: Your previous proposal failed verification. Error details: ${input.previousAttemptError}. Try a different protocol, port, or API path.` : ''
         ].join('\n');
     }
 };

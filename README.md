@@ -42,6 +42,18 @@ O ELO permite a definição de **Diretrizes de Contexto**. Você pode definir re
 - `logs/events.jsonl`: A "fonte da verdade" com o histórico de todos os estados da casa.
 - `logs/requests.jsonl`: Registro de intenções do usuário para aprendizado de preferências.
 
+## 🌐 Console Web (HTTP UI)
+
+O servidor do ELO já expõe uma interface web simples para monitorar o estado e conversar com o agente.
+
+- **URL:** `http://localhost:3000`
+- **Endpoints úteis:**
+	- `GET /api/status` — visão geral (logs, dispositivos, sugestões)
+	- `POST /api/chat` — conversa rápida com o agente
+	- `GET /api/config` / `POST /api/config` — leitura/gravação de chaves
+
+> ⚠️ Ao atualizar chaves via UI, reinicie o processo do servidor para aplicar as variáveis.
+
 ## Por que esta estrutura é superior para o Codex?
 
 - **Abstração de Marca:** Note que não citamos "Samsung" ou "Gree". Falamos de "Protocolos Proprietários" e "WebSockets". Isso força o Codex a escrever código genérico e modular.

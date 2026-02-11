@@ -10,6 +10,7 @@ const getBaseUrl = () => process.env.GEMINI_API_BASE_URL || DEFAULT_BASE_URL;
 type GeminiApiOptions = {
     thinkingBudget?: number;
     model?: string;
+    maxOutputTokens?: number;
 };
 
 const buildUrl = (modelOverride?: string) => {
@@ -34,12 +35,23 @@ export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptio
         ]
     };
 
+    const generationConfig: Record<string, unknown> = {
+        temperature: 0.3,
+        topP: 0.8,
+        topK: 16,
+        maxOutputTokens: options.maxOutputTokens || 200
+    };
+
     if (typeof thinkingBudget === 'number' && !Number.isNaN(thinkingBudget)) {
-        payload.generationConfig = {
-            thinkingConfig: {
-                thinkingBudget
-            }
+        generationConfig.thinkingConfig = {
+            thinkingBudget
         };
+    }
+
+    payload.generationConfig = generationConfig;
+
+    if (process.env.ELO_DEBUG_PROMPT === 'true') {
+        console.log('[ELO] Gemini payload:', JSON.stringify(payload, null, 2));
     }
 
     const response = await axios.post(

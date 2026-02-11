@@ -55,6 +55,18 @@ class AIAgent {
         return runGeminiPrompt(prompt, { thinkingBudget: 0 });
     }
 
+    async processInputWithContext(input: { message: string; context: string; history?: string }): Promise<string> {
+        const prompt = prompts.chatButler({
+            message: input.message,
+            context: input.context,
+            history: input.history
+        });
+        if (process.env.ELO_DEBUG_PROMPT === 'true') {
+            console.log('[ELO] Chat prompt:', prompt);
+        }
+        return runGeminiPrompt(prompt, { thinkingBudget: 0 });
+    }
+
     async generateAutomationCode(spec: AutomationSpec): Promise<string> {
         const prompt = prompts.workflowJson(spec.name, spec.description);
         const thinkingBudget = computeThinkingBudgetFromJson({ name: spec.name, description: spec.description ?? '' });
