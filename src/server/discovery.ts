@@ -7,6 +7,7 @@ import { appendLogEntry } from '../cli/utils/storage-files';
 import { runGeminiPrompt } from '../ai/gemini';
 import { prompts } from '../ai/prompts';
 import { triggerDriverGeneration } from './generators/driver-generator';
+import { readDevices } from '../cli/utils/device-registry';
 import {
   defaultBroadcastProfiles,
   defaultPortSignatures,
@@ -37,12 +38,22 @@ type DiscoveryPluginConfig = VendorPluginConfig;
 
 const knownDevices = new Set<string>();
 
+const isIpAlreadyRegistered = async (ip: string): Promise<boolean> => {
+  try {
+    const devices = await readDevices();
+    return devices.some(device => device.ip === ip);
+  } catch (error) {
+    console.warn('[ELO] Failed to check registered devices:', error);
+    return false;
+  }
+};
+
 const DEFAULT_SCAN_PORTS = [4387, 554, 8899, 8001, 8002, 1515];
 const DEFAULT_SCAN_TIMEOUT_MS = 250;
 const DEFAULT_SCAN_CONCURRENCY = 64;
-const DEFAULT_SCAN_INTERVAL_MS = 0;
-const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 60000;
-const DEFAULT_SSDP_INTERVAL_MS = 60000;
+const DEFAULT_SCAN_INTERVAL_MS = 300000; // 5 minutos (era 0)
+const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 600000; // 10 minutos (era 60000)
+const DEFAULT_SSDP_INTERVAL_MS = 600000; // 10 minutos (era 60000)
 const DEFAULT_FINGERPRINT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_FINGERPRINT_TIMEOUT_MS = 1500;
 const SSDP_ADDRESS = '239.255.255.250';
@@ -465,6 +476,13 @@ export const startDiscovery = (): DiscoveryHandle => {
         return;
       }
       await runLimited(targets, scanConcurrency, async (ip) => {
+        // Verificar se o IP já está registrado nos dispositivos
+        const alreadyRegistered = await isIpAlreadyRegistered(ip);
+        if (alreadyRegistered) {
+          console.log(`[ELO] Skipping scan for ${ip} - already registered in devices`);
+          return;
+        }
+
         for (const port of scanPorts) {
           const open = await probeTcpPort(ip, port, scanTimeoutMs);
           if (!open) continue;
@@ -558,7 +576,14 @@ export const startDiscovery = (): DiscoveryHandle => {
     socket.on('error', (error) => {
       console.error('[ELO] Vendor broadcast socket error:', error);
     });
-    socket.on('message', (message, rinfo) => {
+    socket.on('message', async (message, rinfo) => {
+      // Verificar se o IP já está registrado nos dispositivos
+      const alreadyRegistered = await isIpAlreadyRegistered(rinfo.address);
+      if (alreadyRegistered) {
+        console.log(`[ELO] Skipping vendor broadcast response from ${rinfo.address} - already registered in devices`);
+        return;
+      }
+
       const signature = getPortSignature(rinfo.port);
       const typeTag = signature?.tag || 'udp_broadcast';
       const key = buildDeviceKey({
@@ -652,7 +677,14 @@ export const startDiscovery = (): DiscoveryHandle => {
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     sockets.push(socket);
 
-    socket.on('message', (message, rinfo) => {
+    socket.on('message', async (message, rinfo) => {
+      // Verificar se o IP já está registrado nos dispositivos
+      const alreadyRegistered = await isIpAlreadyRegistered(rinfo.address);
+      if (alreadyRegistered) {
+        console.log(`[ELO] Skipping SSDP response from ${rinfo.address} - already registered in devices`);
+        return;
+      }
+
       const raw = message.toString('utf8');
       const headers = parseSsdpHeaders(raw);
       const headerText = getHeaderText(headers);
