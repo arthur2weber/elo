@@ -56,10 +56,10 @@ export class GenericHttpDriver {
         }
 
         // Clean up remaining placeholders
-        url = url.replace(/\{.*?\}/g, '').replace(/<.*?>/g, '');
-        if (body && typeof body === 'string') {
-            body = body.replace(/\{.*?\}/g, '').replace(/<.*?>/g, '');
-        }
+        // url = url.replace(/\{.*?\}/g, '').replace(/<.*?>/g, '');
+        // if (body && typeof body === 'string') {
+        //     body = body.replace(/\{.*?\}/g, '').replace(/<.*?>/g, '');
+        // }
 
         if (method === 'WS' || isWsUrl) {
             return this.executeWsAction(url, body);
@@ -114,23 +114,20 @@ export class GenericHttpDriver {
                 if (ws.readyState !== WebSocket.CLOSED) {
                     ws.terminate();
                 }
-                resolve({ success: false, error: 'WebSocket timeout' });
-            }, 10000);
+                resolve({ success: false, error: 'WebSocket global timeout (30s)' });
+            }, 30000);
 
             ws.on('open', () => {
                 console.log(`[GenericHttpDriver] WebSocket connected to ${url}`);
-                if (body) {
-                    ws.send(body);
-                    console.log(`[GenericHttpDriver] WebSocket message sent`);
-                }
+                // NOTE: We do NOT send body here anymore. We wait for ms.channel.connect.
+                // Unless the device doesn't send handshake? (Tizen always does)
                 
-                // Wait for feedback. If it's a new connection, the user might need time to allow.
-                // If already allowed, the token usually comes back in < 500ms.
+                // Increase wait time for user interaction (Pairing can take time)
                 const successTimeout = setTimeout(() => {
                     clearTimeout(timeout);
                     ws.terminate(); 
-                    resolve({ success: true, data: 'Executed (Timeout waiting for response)' });
-                }, 5000); // 5 seconds is usually enough if already paired
+                    resolve({ success: true, data: 'Executed (Timeout waiting for response - No Token Captured)' });
+                }, 25000); // 25 seconds to give user time to click Allow
 
                 ws.on('message', (data) => {
                     const msg = data.toString();
@@ -152,6 +149,21 @@ export class GenericHttpDriver {
                                 clearTimeout(timeout);
                                 ws.terminate();
                                 resolve({ success: true, data: msg, metadata: { token: parsed.data.token } });
+                                return;
+                            }
+                            // Handshake received.
+                            // If we have a body to send, we send it now.
+                            if (body) {
+                                console.log(`[GenericHttpDriver] Handshake OK. Sending pending command...`);
+                                console.log(`[GenericHttpDriver] Payload:`, body); // LOG PAYLOAD
+                                ws.send(body);
+                                // Give it a moment to fly, then close
+                                setTimeout(() => {
+                                     clearTimeout(successTimeout);
+                                     clearTimeout(timeout);
+                                     ws.close();
+                                     resolve({ success: true, data: 'Command Sent' });
+                                }, 500); 
                                 return;
                             }
                         }

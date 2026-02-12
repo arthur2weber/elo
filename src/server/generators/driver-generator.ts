@@ -187,6 +187,13 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
         extraHints.push(`Protocol Reference: ${signatureMatch[0]} (See ${signatureMatch[1].repo}). Typical pattern: ${signatureMatch[1].patterns}`);
     }
 
+    if (extraHints.length === 0) {
+        // Fallback for Samsung Tizen Specific Check
+        if (payload.port && [8001, 8002].includes(payload.port)) {
+             extraHints.push('DETECTED TIZEN PORT (8001/8002). USE SECURE WEBSOCKET (wss://) on port 8002. Use standard "ms.remote.control" JSON payload.');
+        }
+    }
+
     try {
         let extraContext = {};
         

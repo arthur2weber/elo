@@ -13,7 +13,7 @@ export const PROTOCOL_REFERENCES = {
     'tizen': {
         repo: 'home-assistant/core/tree/dev/homeassistant/components/samsungtv',
         ports: [8001, 8002],
-        patterns: 'WebSocket wss://<ip>:8002/api/v2/channels/samsung.remote.control',
+        patterns: 'WebSocket wss://<ip>:8002/api/v2/channels/samsung.remote.control. Payload: {"method":"ms.remote.control","params":{"Cmd":"Click","DataOfCmd":"KEY_XXX" ...}}',
     },
     'shelly': {
         repo: 'home-assistant/core/tree/dev/homeassistant/components/shelly',

@@ -214,6 +214,7 @@ export const prompts = {
             'ALLOWED METHODS: "GET", "POST", "PUT", "DELETE", "WS" (WebSocket).',
             'SAMSUNG TIZEN EXAMPLE (FOLLOW THIS EXACT PATTERN):',
             JSON.stringify(samsungExample, null, 2),
+            'CRITICAL: When writing JSON payloads in "body", DO NOT use generic placeholders like "{value}" or "{cmd}". ONLY use allowed placeholders: "{ip}", "{token}", "{mac}". All other curly braces MUST be preserved as valid JSON.',
             'Return JSON only: { "deviceName": string, "deviceType": string, "capabilities": string[], "actions": Record<string, { method: "GET"|"POST"|"PUT"|"WS", url: string, headers?: Record<string, string>, body?: string, notes?: string }> }.',
             'CAPABILITIES: Map the device to standard categories like "on_off", "brightness", "media_control", "volume", "temperature_sensor", etc.',
             'COMMAND NORMALIZATION (CRITICAL): Use these exact keys for typical actions:',

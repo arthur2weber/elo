@@ -568,7 +568,9 @@ window.triggerDevicePairing = async (id) => {
   btn.disabled = true;
 
   try {
-    const res = await fetchJson(`/api/devices/${id}/pair`, { method: 'POST' });
+    const rawRes = await fetch(`/api/devices/${id}/pair`, { method: 'POST' });
+    const res = await rawRes.json();
+    
     if (res.success) {
       alert('Solicitação enviada! Verifique se apareceu uma mensagem na tela da TV e autorize o ELO.');
     } else {
