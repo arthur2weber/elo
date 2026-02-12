@@ -18,7 +18,7 @@ import { appendDecision, getPreferenceSummary } from '../src/cli/utils/preferenc
 import { appendSuggestion, getPendingSuggestions, updateSuggestionStatus } from '../src/cli/utils/suggestions';
 import { interpretUserReply } from '../src/cli/utils/reply-interpreter';
 import { addDevice, readDevices } from '../src/cli/utils/device-registry';
-import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from '../src/server/decision-context';
+import { buildDecisionContext, buildDeviceStatusHistory, buildDeviceStatusSnapshot, formatDecisionContext } from '../src/server/decision-context';
 import { validateWorkflowDevices } from '../src/server/device-validator';
 import { maskConfigValue, readConfig, writeConfig } from '../src/server/config';
 
@@ -78,7 +78,9 @@ const run = async () => {
 
   const snapshot = buildDeviceStatusSnapshot(logs);
   assert.strictEqual(snapshot.length, 1, 'Device status snapshot should include one device');
-  const structuredContext = buildDecisionContext(devices, snapshot, requests);
+  const history = buildDeviceStatusHistory(logs, 5);
+  assert.ok(history.length === 1, 'Device status history should capture last change');
+  const structuredContext = buildDecisionContext(devices, snapshot, history, requests);
   const context = formatDecisionContext(structuredContext);
   assert.ok(context.includes('statusSnapshot'), 'Decision context should include device status');
 

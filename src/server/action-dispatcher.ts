@@ -1,5 +1,5 @@
 import { appendLogEntry } from '../cli/utils/storage-files';
-import { GenericHttpDriver } from '../drivers/http-generic';
+import { GenericHttpDriver, DriverResult } from '../drivers/http-generic';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -39,7 +39,44 @@ export const dispatchAction = async (actionString: string) => {
     }
 
     const driver = new GenericHttpDriver(driverConfig);
-    const result = await driver.executeAction(command);
+    
+    // Load device notes to use as parameters
+    let params: Record<string, any> = {};
+    try {
+        const devicesPath = path.join(process.cwd(), 'logs', 'devices.json');
+        const devicesContent = await fs.readFile(devicesPath, 'utf-8');
+        const devices = JSON.parse(devicesContent);
+        const deviceData = devices.find((d: any) => d.id === device);
+        if (deviceData && deviceData.notes) {
+            if (typeof deviceData.notes === 'object') {
+                params = { ...deviceData.notes };
+            } else if (typeof deviceData.notes === 'string') {
+                params = { token: deviceData.notes, notes: deviceData.notes };
+            }
+        }
+    } catch (e) {
+        // Ignore errors loading notes
+    }
+
+    const result: DriverResult = await driver.executeAction(command, params);
+
+    // If metadata contains a token, update the device's notes/token
+    if (result.metadata && result.metadata.token) {
+        console.log(`[ActionDispatcher] Capturing new token for ${device}`);
+        try {
+            const devicesPath = path.join(process.cwd(), 'logs', 'devices.json');
+            const devicesContent = await fs.readFile(devicesPath, 'utf-8');
+            const devices = JSON.parse(devicesContent);
+            const devIdx = devices.findIndex((d: any) => d.id === device);
+            if (devIdx !== -1) {
+                devices[devIdx].notes = result.metadata.token;
+                await fs.writeFile(devicesPath, JSON.stringify(devices, null, 2));
+                console.log(`[ActionDispatcher] Token persisted to devices.json`);
+            }
+        } catch (e) {
+            console.error(`[ActionDispatcher] Failed to persist token:`, e);
+        }
+    }
 
     await appendLogEntry({
         timestamp: new Date().toISOString(),

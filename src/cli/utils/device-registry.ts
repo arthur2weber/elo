@@ -13,6 +13,7 @@ export type DeviceConfig = {
   protocol?: string;
   ip?: string;
   mac?: string;
+  notes?: string;
   integrationStatus?: 'pending' | 'ready' | 'unknown';
 };
 
@@ -148,6 +149,7 @@ const performAddDevice = async (device: DeviceConfig) => {
 
     existing.protocol = device.protocol || existing.protocol;
     existing.mac = device.mac || existing.mac;
+    existing.notes = device.notes || existing.notes;
 
     if (device.integrationStatus) {
       if (device.integrationStatus === 'ready' || !existing.integrationStatus) {
@@ -168,4 +170,25 @@ const performAddDevice = async (device: DeviceConfig) => {
   await ensureLogsDir();
   await fs.writeFile(getDevicesPath(), JSON.stringify(devices, null, 2));
   return existing || device;
+};
+
+export const updateDevice = async (id: string, updates: Partial<DeviceConfig>): Promise<DeviceConfig> => {
+    const devices = await readDevices();
+    const index = devices.findIndex(d => d.id === id);
+    if (index === -1) throw new Error(`Device ${id} not found`);
+    
+    devices[index] = { ...devices[index], ...updates };
+    await writeDevices(devices);
+    return devices[index];
+};
+
+export const deleteDevice = async (id: string): Promise<void> => {
+    const devices = await readDevices();
+    const filtered = devices.filter(d => d.id !== id);
+    await writeDevices(filtered);
+};
+
+const writeDevices = async (devices: DeviceConfig[]) => {
+  await ensureLogsDir();
+  await fs.writeFile(getDevicesPath(), JSON.stringify(devices, null, 2));
 };

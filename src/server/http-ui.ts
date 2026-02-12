@@ -2,16 +2,18 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import AIAgent from '../ai/agent';
-import { readDevices } from '../cli/utils/device-registry';
+import { readDevices, updateDevice, deleteDevice } from '../cli/utils/device-registry';
 import { appendRequestLog, readRecentAiUsage, readRecentLogs, readRecentRequests } from '../cli/utils/storage-files';
 import type { AiUsageLogEntry } from '../cli/utils/storage-files';
 import { getLatestSuggestions, getPendingSuggestions } from '../cli/utils/suggestions';
 import { getPreferenceSummary } from '../cli/utils/preferences';
-import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
+import { buildDecisionContext, buildDeviceStatusHistory, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
 import { maskConfigValue, readConfig, writeConfig } from './config';
 import { dispatchAction } from './action-dispatcher';
+import { triggerDriverGeneration } from './generators/driver-generator';
 
 const DEFAULT_LIMIT = 50;
+const STATUS_HISTORY_LIMIT = 20;
 const DEFAULT_KEYS = [
   'GEMINI_API_KEY',
   'GEMINI_API_BASE_URL',
@@ -279,7 +281,8 @@ export const registerHttpUi = (app: express.Express) => {
         readRecentRequests(DEFAULT_LIMIT)
       ]);
       const statusSnapshot = buildDeviceStatusSnapshot(logs);
-      const contextPayload = buildDecisionContext(devices, statusSnapshot, requests);
+      const statusHistory = buildDeviceStatusHistory(logs, Math.min(DEFAULT_LIMIT, STATUS_HISTORY_LIMIT));
+      const contextPayload = buildDecisionContext(devices, statusSnapshot, statusHistory, requests);
       const context = formatDecisionContext(contextPayload);
       const history = chatMemory.get(sessionKey) ?? [];
       const historyText = history.length ? formatHistory(history) : undefined;
@@ -385,6 +388,66 @@ export const registerHttpUi = (app: express.Express) => {
           restartRequired: true
         }
       });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/devices/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const updated = await updateDevice(id, updates);
+      res.json({ success: true, data: updated });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.delete('/api/devices/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      await deleteDevice(id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/devices/:id/regenerate', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const devices = await readDevices();
+      const device = devices.find(d => d.id === id);
+      
+      if (!device) {
+        res.status(404).json({ success: false, error: 'Device not found' });
+        return;
+      }
+
+      // Re-trigger generation using current device info
+      // We pass forceRegenerate: true to skip the "already exists" check
+      triggerDriverGeneration({
+        ip: device.ip,
+        name: device.name,
+        type: device.type,
+        protocol: device.protocol,
+        source: 'manual_trigger',
+        notes: (device as any).notes || (device as any).customNotes,
+        forceRegenerate: true
+      });
+
+      res.json({ success: true, message: 'Driver regeneration triggered background process.' });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/devices/:id/actions/:action', async (req, res) => {
+    try {
+      const { id, action } = req.params;
+      const result = await dispatchAction(`${id}=${action}`);
+      res.json({ success: true, data: result });
     } catch (error) {
       res.status(500).json({ success: false, error: (error as Error).message });
     }

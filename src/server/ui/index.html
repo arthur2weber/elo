@@ -117,6 +117,85 @@
       </section>
     </main>
 
+    <div id="device-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-tabs">
+          <div class="modal-tab active" data-tab="settings">Configurações</div>
+          <div id="tab-controls-btn" class="modal-tab" data-tab="controls">Controles</div>
+        </div>
+
+        <div id="modal-panel-settings" class="modal-panel active">
+          <form id="device-edit-form" class="config-form" style="margin-top: 0;">
+            <input type="hidden" id="edit-device-id" />
+            <div id="edit-device-hint" class="muted" style="margin-bottom: 12px; font-size: 12px; color: #facc15"></div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <label>
+                Nome
+                <input type="text" id="edit-device-name" />
+              </label>
+              <label>
+                Local (Cômodo)
+                <input type="text" id="edit-device-room" />
+              </label>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <label>
+                Tipo
+                <input type="text" id="edit-device-type" />
+              </label>
+              <label>
+                IP
+                <input type="text" id="edit-device-ip" />
+              </label>
+            </div>
+
+            <label>
+              Endpoint (URL de Controle)
+              <input type="text" id="edit-device-endpoint" />
+            </label>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <label>
+                Protocolo
+                <input type="text" id="edit-device-protocol" />
+              </label>
+              <label>
+                Integração
+                <select id="edit-device-status" style="display: block; width: 100%; margin-top: 4px; padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px;">
+                  <option value="ready">Pronto (Ready)</option>
+                  <option value="pending">Pendente (Pending)</option>
+                  <option value="unknown">Desconhecido (Unknown)</option>
+                </select>
+              </label>
+            </div>
+
+            <label id="edit-notes-label">
+              Credenciais / Notas (JSON ou Texto)
+              <textarea id="edit-device-notes" rows="3" style="display: block; width: 100%; margin-top: 4px; padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; font-family: monospace;" placeholder='{"user": "admin", "pass": "123"}'></textarea>
+            </label>
+
+            <div class="modal-actions">
+              <button type="button" class="btn-small" onclick="closeDeviceModal()">Cancelar</button>
+              <button type="button" id="btn-regenerate" class="btn-small" style="background: rgba(42, 195, 255, 0.1); border-color: var(--accent-cyan); color: var(--accent-cyan)">Recriar Driver (IA)</button>
+              <button type="submit">Salvar Alterações</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="modal-panel-controls" class="modal-panel">
+          <div id="device-controls-container">
+            <!-- Dynamic content based on type -->
+            <p class="muted">Carregando controles...</p>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn-small" onclick="closeDeviceModal()">Fechar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="/app.js"></script>
   </body>
 </html>

@@ -1,26 +1,33 @@
 import axios from 'axios';
+import WebSocket from 'ws';
 
 interface HttpDriverConfig {
     deviceName: string;
     deviceType: string;
     actions: Record<string, {
-        method: 'GET' | 'POST' | 'PUT';
+        method: 'GET' | 'POST' | 'PUT' | 'WS';
         url: string;
         headers?: Record<string, string>;
         body?: string;
     }>;
 }
 
+export interface DriverResult {
+    success: boolean;
+    status?: number;
+    data?: any;
+    error?: string;
+    metadata?: Record<string, any>;
+}
+
 export class GenericHttpDriver {
     private config: HttpDriverConfig;
-    private baseUrl: string;
 
     constructor(config: HttpDriverConfig) {
         this.config = config;
-        this.baseUrl = ''; // If needed, can be extracted from action URLs
     }
 
-    async executeAction(actionName: string, params?: Record<string, any>) {
+    async executeAction(actionName: string, params?: Record<string, any>): Promise<DriverResult> {
         const action = this.config.actions[actionName];
         if (!action) {
             throw new Error(`Action "${actionName}" not found in driver configuration for ${this.config.deviceName}`);
@@ -28,19 +35,34 @@ export class GenericHttpDriver {
 
         let url = action.url;
         let body = action.body;
+        const method = (action.method || '').toString().toUpperCase();
+
+        // Check if URL suggests WebSocket (wss:// or ws://)
+        const isWsUrl = url.startsWith('ws://') || url.startsWith('wss://');
 
         // Replace placeholders in URL and Body
         if (params) {
             Object.entries(params).forEach(([key, value]) => {
-                const placeholder = `<${key}>`;
-                if (url.includes(placeholder)) {
-                    url = url.replace(placeholder, String(value));
-                }
-                // Also support simple templating in body
-                if (body && typeof body === 'string' && body.includes(placeholder)) {
-                    body = body.replace(placeholder, String(value));
-                }
+                const placeholders = [`<${key}>`, `{${key}}` ];
+                placeholders.forEach(placeholder => {
+                    if (url.includes(placeholder)) {
+                        url = url.split(placeholder).join(String(value || ''));
+                    }
+                    if (body && typeof body === 'string' && body.includes(placeholder)) {
+                        body = body.split(placeholder).join(String(value || ''));
+                    }
+                });
             });
+        }
+
+        // Clean up remaining placeholders
+        url = url.replace(/\{.*?\}/g, '').replace(/<.*?>/g, '');
+        if (body && typeof body === 'string') {
+            body = body.replace(/\{.*?\}/g, '').replace(/<.*?>/g, '');
+        }
+
+        if (method === 'WS' || isWsUrl) {
+            return this.executeWsAction(url, body);
         }
 
         // Parse body if it is a JSON string
@@ -53,11 +75,11 @@ export class GenericHttpDriver {
             }
         }
 
-        console.log(`[GenericHttpDriver] Executing ${actionName} on ${this.config.deviceName}: ${action.method} ${url}`);
+        console.log(`[GenericHttpDriver] Executing ${actionName} on ${this.config.deviceName}: ${method} ${url}`);
 
         try {
             const response = await axios({
-                method: action.method,
+                method: method as any,
                 url: url,
                 headers: action.headers,
                 data: payload,
@@ -76,6 +98,84 @@ export class GenericHttpDriver {
                 error: error.message
             };
         }
+    }
+
+    private async executeWsAction(url: string, body?: string): Promise<DriverResult> {
+        return new Promise((resolve) => {
+            console.log(`[GenericHttpDriver] Executing WebSocket action on ${url}`);
+            
+            const ws = new WebSocket(url, {
+                handshakeTimeout: 5000,
+                rejectUnauthorized: false
+            });
+
+            const timeout = setTimeout(() => {
+                if (ws.readyState !== WebSocket.CLOSED) {
+                    ws.terminate();
+                }
+                resolve({ success: false, error: 'WebSocket timeout' });
+            }, 10000);
+
+            ws.on('open', () => {
+                console.log(`[GenericHttpDriver] WebSocket connected to ${url}`);
+                if (body) {
+                    ws.send(body);
+                    console.log(`[GenericHttpDriver] WebSocket message sent`);
+                }
+                
+                // Wait for feedback. If it's a new connection, the user might need time to allow.
+                // If already allowed, the token usually comes back in < 500ms.
+                const successTimeout = setTimeout(() => {
+                    clearTimeout(timeout);
+                    ws.terminate(); 
+                    resolve({ success: true, data: 'Executed (Timeout waiting for response)' });
+                }, 5000); // 5 seconds is usually enough if already paired
+
+                ws.on('message', (data) => {
+                    const msg = data.toString();
+                    console.log(`[GenericHttpDriver] WebSocket received from ${this.config.deviceName}:`, msg);
+                    
+                    try {
+                        const parsed = JSON.parse(msg);
+                        
+                        // If we get an 'unauthorized', don't close yet. The user might be clicking 'Allow'.
+                        if (parsed.event === 'ms.channel.unauthorized') {
+                            console.log(`[GenericHttpDriver] Waiting for user to authorize on TV...`);
+                            return; // Keep waiting for next message
+                        }
+
+                        if (parsed.event === 'ms.channel.connect') {
+                            if (parsed.data && parsed.data.token) {
+                                console.log(`[GenericHttpDriver] TOKEN CAPTURED:`, parsed.data.token);
+                                clearTimeout(successTimeout);
+                                clearTimeout(timeout);
+                                ws.terminate();
+                                resolve({ success: true, data: msg, metadata: { token: parsed.data.token } });
+                                return;
+                            }
+                        }
+
+                        // For any other message, we resolve
+                        clearTimeout(successTimeout);
+                        clearTimeout(timeout);
+                        ws.terminate();
+                        resolve({ success: true, data: msg });
+                    } catch (e) {
+                        // Not JSON, resolve with raw data
+                        clearTimeout(successTimeout);
+                        clearTimeout(timeout);
+                        ws.terminate();
+                        resolve({ success: true, data: msg });
+                    }
+                });
+            });
+
+            ws.on('error', (err) => {
+                clearTimeout(timeout);
+                console.error(`[GenericHttpDriver] WS Error:`, err.message);
+                resolve({ success: false, error: err.message });
+            });
+        });
     }
     
     getAvailableActions() {

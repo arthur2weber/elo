@@ -72,12 +72,28 @@ export const appendRequestLog = async (entry: RequestLogEntry) => {
   const logsDir = getLogsDir();
   await ensureDir(logsDir);
   const logPath = getRequestsLogPath();
+  const contextLimit = Number.parseInt(process.env.ELO_REQUEST_CONTEXT_LOG_LIMIT ?? '4000', 10);
+  const resolvedLimit = Number.isFinite(contextLimit) && contextLimit > 0 ? contextLimit : 4000;
+  const fullContext = typeof entry.context === 'string' ? entry.context : '';
+  const isTruncated = fullContext.length > resolvedLimit;
+  const storedContext = isTruncated
+    ? `${fullContext.slice(0, resolvedLimit)}… [truncated ${fullContext.length - resolvedLimit} chars]`
+    : fullContext;
+  const payloadMeta: Record<string, unknown> = {
+    ...(entry.payload ?? {})
+  };
+  if (typeof payloadMeta.contextLength !== 'number') {
+    payloadMeta.contextLength = fullContext.length;
+  }
+  if (isTruncated) {
+    payloadMeta.contextTruncated = true;
+  }
   const payload = {
     timestamp: entry.timestamp || new Date().toISOString(),
     user: entry.user ?? 'default',
     request: entry.request,
-    context: entry.context ?? '',
-    payload: entry.payload ?? {}
+    context: storedContext,
+    payload: payloadMeta
   };
   await fs.appendFile(logPath, `${JSON.stringify(payload)}\n`);
   return { logPath, entry: payload };

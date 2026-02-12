@@ -9,6 +9,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import axios from 'axios';
 import { probeTcpPort } from '../discovery';
+import { identifyDevice } from './device-identification';
 
 interface DiscoveryPayload {
     name?: string;
@@ -22,12 +23,15 @@ interface DiscoveryPayload {
     raw?: string;
     rawHex?: string;
     protocol?: string;
+    notes?: any;
+    forceRegenerate?: boolean;
+    mac?: string;
 }
 
 const COMMON_PORTS = [80, 8001, 8002, 7678, 9119, 9197, 8060, 52235, 5001, 8080];
 const GENERATION_QUEUE = new Set<string>();
 const GLOBAL_ATTEMPT_TRACKER = new Map<string, number>();
-const MAX_GLOBAL_ATTEMPTS = 10;
+const MAX_GLOBAL_ATTEMPTS = 3;
 const GENERATION_RETRY_DELAY_MS = 60_000;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -113,6 +117,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
             room: 'unknown',
             protocol: payload.protocol || payload.source || 'unknown',
             ip: targetIp,
+            notes: payload.notes,
             integrationStatus: 'pending'
         });
         if (registered.integrationStatus === 'pending') {
@@ -120,12 +125,12 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
         }
     };
 
-    if (GLOBAL_ATTEMPT_TRACKER.get(trackingKey) && (GLOBAL_ATTEMPT_TRACKER.get(trackingKey)! >= MAX_GLOBAL_ATTEMPTS)) {
+    if (GLOBAL_ATTEMPT_TRACKER.get(trackingKey) && (GLOBAL_ATTEMPT_TRACKER.get(trackingKey)! >= MAX_GLOBAL_ATTEMPTS) && !payload.forceRegenerate) {
         console.log(`[DriverGenerator] Skipping generation for ${trackingKey} (Max attempts reached: ${MAX_GLOBAL_ATTEMPTS})`);
         return;
     }
     
-    if (GENERATION_QUEUE.has(deviceKey)) {
+    if (GENERATION_QUEUE.has(deviceKey) && !payload.forceRegenerate) {
         return;
     }
     GENERATION_QUEUE.add(deviceKey);
@@ -138,7 +143,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
         const driversDir = path.join(process.cwd(), 'logs', 'drivers');
         const list = await readDevices();
         const existing = list.find((d) => (d.ip?.trim() ?? '') === (targetIp ?? trackingKey));
-        if (existing) {
+        if (existing && !payload.forceRegenerate) {
             if (existing.integrationStatus === 'pending') {
                 console.log(`[DriverGenerator] Pending integration acknowledged for ${existing.name || existing.id} (${trackingKey}). Skipping automated generation.`);
                 GENERATION_QUEUE.delete(deviceKey);
@@ -160,7 +165,9 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
         logCondensedError('Error checking existing devices:', e);
     }
 
-    GLOBAL_ATTEMPT_TRACKER.set(trackingKey, currentAttempts + 1);
+    if (!payload.forceRegenerate) {
+        GLOBAL_ATTEMPT_TRACKER.set(trackingKey, currentAttempts + 1);
+    }
 
     let attempt = 0;
     const maxAttempts = 3;
@@ -186,6 +193,12 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
             const combinedInfo = { ...payload, scannedPorts: extraContext };
             const rawInfoPretty = JSON.stringify(combinedInfo, null, 2);
             const rawInfoCompact = JSON.stringify(combinedInfo);
+            
+            // Analyze device identity based on MAC and Ports
+            const identificationHint = identifyDevice(targetIp || '0.0.0.0', payload.port || 0, payload.mac);
+            if (identificationHint) {
+                console.log(`[DriverGenerator] Identification Hint for ${targetIp}: ${identificationHint.replace(/\n/g, ' ')}`);
+            }
 
             // 1. Ask Gemini to fingerprint and generate configuration
             const rawResponse = await runGeminiPrompt(prompts.generateDriver({
@@ -193,7 +206,9 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                 port: payload.port || 0,
                 protocol: payload.protocol || payload.source,
                 rawInfo: rawInfoPretty,
-                previousAttemptError: lastError
+                identificationHint: identificationHint,
+                previousAttemptError: lastError,
+                userNotes: payload.notes ? JSON.stringify(payload.notes) : undefined
             }), {
                 maxOutputTokens: 8192,
                 metadata: {
@@ -203,7 +218,8 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                         attempt,
                         hasTargetIp: Boolean(targetIp),
                         protocol: payload.protocol || payload.source || 'unknown',
-                        rawInfoChars: rawInfoCompact.length
+                        rawInfoChars: rawInfoCompact.length,
+                        hasUserNotes: Boolean(payload.notes)
                     }
                 }
             });
@@ -275,6 +291,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     endpoint: parsed.actions?.getStatus?.url || '', // Best effort endpoint for monitoring
                     protocol: 'http-generic',
                     ip: targetIp,
+                    notes: payload.notes,
                     integrationStatus: 'ready'
                 });
 

@@ -119,27 +119,82 @@ export const prompts = {
         protocol: string;
         rawInfo: string;
         previousAttemptError?: string;
+        userNotes?: string;
+        identificationHint?: string;
     }) => {
+        const typeSpecificRules: Record<string, string[]> = {
+            'TV': [
+                'Include volumeUp, volumeDown, mute, channelUp, channelDown, powerOn, powerOff, up, down, left, right, enter, back, home.',
+                'For Samsung TVs (Tizen):',
+                '  - USE method: "WS" (WebSocket) for all control actions.',
+                '  - PORT: 8002 (Secure) is preferred over 8001.',
+                '  - URL: "wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVNtYXJ0JmF1dGg9MQ==&token={token}".',
+                '  - The "{token}" placeholder is CRITICAL; it allows the engine to inject the security token from device notes to avoid daily re-authorization.',
+                '  - PAYLOAD: {"method":"ms.remote.control","params":{"Cmd":"Click","DataOfCmd":"KEY_XXXX","Option":"false","TypeOfRemote":"SendRemoteKey"}}.',
+                '  - Common Keys: KEY_POWER, KEY_VOLUP, KEY_VOLDOWN, KEY_MUTE, KEY_CHUP, KEY_CHDOWN, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER, KEY_RETURN, KEY_HOME.',
+                '  - For Volume/Mute, you can also consider UPnP port 9197 RenderingControl as a secondary fallback.'
+            ],
+            'Camera': [
+                'Look for PTZ (Pan/Tilt/Zoom) controls: moveUp, moveDown, moveLeft, moveRight.',
+                'Include a "getStatus" action to check availability.',
+                'If you suspect authentication is needed (401/403 errors or common camera patterns), add an "authRequired: true" field in actions notes.'
+            ],
+            'Air Conditioner': [
+                'Include setTemperature, setMode (cool, heat, auto), setFanSpeed.',
+                'Ensure powerOn and powerOff are present.'
+            ],
+            'Light': [
+                'Include turnOn, turnOff, setBrightness, setColor (if metadata suggests RGB).'
+            ],
+            'Sensor': [
+                'Focus on "getStatus" or "getMetadata".',
+                'Identify if it is a Motion, Presence, Temperature, or Humidity sensor.'
+            ]
+        };
+
+        const samsungExample = {
+            deviceName: "Samsung TV",
+            deviceType: "TV",
+            actions: {
+                powerOff: {
+                    method: "WS",
+                    url: "wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVNtYXJ0JmF1dGg9MQ==&token={token}",
+                    body: "{\"method\":\"ms.remote.control\",\"params\":{\"Cmd\":\"Click\",\"DataOfCmd\":\"KEY_POWER\",\"Option\":\"false\",\"TypeOfRemote\":\"SendRemoteKey\"}}"
+                },
+                volumeUp: {
+                    method: "WS",
+                    url: "wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVNtYXJ0JmF1dGg9MQ==&token={token}",
+                    body: "{\"method\":\"ms.remote.control\",\"params\":{\"Cmd\":\"Click\",\"DataOfCmd\":\"KEY_VOLUP\",\"Option\":\"false\",\"TypeOfRemote\":\"SendRemoteKey\"}}"
+                }
+            }
+        };
+
+        const ruleStrings = Object.entries(typeSpecificRules)
+            .map(([type, rules]) => `- IF DEVICE TYPE IS OR LIKELY IS ${type.toUpperCase()}:\n  ${rules.map(r => `  * ${r}`).join('\n')}`)
+            .join('\n');
+
         return [
             'You are a smart home connectivity assistant.',
             'Your task is to generate a declarative HTTP driver configuration for the discovered device.',
+            input.userNotes ? `CRITICAL USER CONTEXT: The user provided these credentials/notes: ${input.userNotes}. Use them to build authenticated URLs if needed.` : '',
             'Do NOT generate TypeScript code. Generate a JSON configuration that a generic HTTP client can use.',
-            'Return JSON only: { "deviceName": string, "deviceType": string, "actions": Record<string, { method: "GET"|"POST"|"PUT", url: string, headers?: Record<string, string>, body?: string }> }.',
+            'ALLOWED METHODS: "GET", "POST", "PUT", "DELETE", "WS" (WebSocket).',
+            'SAMSUNG TIZEN EXAMPLE (FOLLOW THIS EXACT PATTERN):',
+            JSON.stringify(samsungExample, null, 2),
+            'Return JSON only: { "deviceName": string, "deviceType": string, "actions": Record<string, { method: "GET"|"POST"|"PUT"|"WS", url: string, headers?: Record<string, string>, body?: string, notes?: string }> }.',
             'Rules:',
-            '- Infer the likely API endpoints based on the device metadata, standard IoT protocols (Hue, Tuya, Tasmota, Shelly, etc), or available ports.',
-            '- Typically useful actions: "powerOn", "powerOff", "toggle", "getStatus", "getVolume", "setVolume".',
-            '- IF THE DEVICE IS A TV (e.g. Samsung, LG, Android TV):',
-            '  1. You MUST include "volumeUp", "volumeDown", "mute".',
-            '  2. You MUST include "setVolume" and "getVolume" if technically possible (Commonly via UPnP RenderingControl on port 9197 for Samsung, or port 55000/converted REST).',
-            '  3. For Samsung TVs specifically: Use port 8001/api/v2/channels/samsung.remote.control for keys, AND UPnP port 9197 (urn:schemas-upnp-org:service:RenderingControl:1) for "setVolume" (action SetVolume) and "getVolume" (action GetVolume).',
-            '- The "url" should be a full HTTP URL.',
-            '- If the device requires a body, specify it as a stringified JSON or plain text.',
+            '- Infer the likely API endpoints based on metadata, standard IoT protocols (Hue, Tuya, Tasmota, Shelly, ESPHome, etc), or available ports.',
+            '- Typically useful actions: "powerOn", "powerOff", "toggle", "getStatus".',
+            ruleStrings,
+            '- The "url" should be a full HTTP/WS URL using the provided IP and Port.',
+            '- If authentication is likely required but unknown, mention it in the "notes" field of the action.',
              `Input Data:`,
             `IP: ${input.ip}`,
             `Port: ${input.port}`,
             `Protocol: ${input.protocol}`,
+            input.identificationHint ? `Identification Analysis: ${input.identificationHint}` : '',
             `Raw Metadata: ${input.rawInfo}`,
-            input.previousAttemptError ? `\nCRITICAL: Your previous proposal failed verification. Error details: ${input.previousAttemptError}. Try a different protocol, port, or API path.` : ''
+            input.previousAttemptError ? `\nCRITICAL: Your previous proposal failed verification. Error: ${input.previousAttemptError}. Adjust the API paths or types.` : ''
         ].join('\n');
     }
 };

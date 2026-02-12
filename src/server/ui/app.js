@@ -96,21 +96,309 @@ const renderAiUsage = (data) => {
   overviewAiRecent.textContent = recentSample.length ? formatJson(recentSample) : '[]';
 };
 
+let allDevices = {};
+
 const renderDevices = (data) => {
   devicesList.innerHTML = '';
+  allDevices = {};
   if (data.devices.length === 0) {
     devicesList.innerHTML = '<div class="muted">Nenhum dispositivo registrado.</div>';
     devicesStatus.textContent = '[]';
     return;
   }
   data.devices.forEach((device) => {
+    allDevices[device.id] = device;
     const item = document.createElement('div');
     item.className = 'list-item';
-    item.innerHTML = `<strong>${device.name}</strong><div class="muted">${device.id}</div><div>${device.type || 'Sem tipo'} • ${device.room || 'Sem sala'}</div>`;
+    item.innerHTML = `
+      <div class="list-item-content">
+        <strong>${device.name}</strong>
+        <div class="muted">${device.id}</div>
+        <div>${device.type || 'Sem tipo'} • ${device.room || 'Sem sala'} ${device.integrationStatus === 'pending' ? '<span style="color: #facc15">● PENDENTE</span>' : ''}</div>
+      </div>
+      <div class="list-item-actions">
+        <button class="btn-small" onclick="openDeviceModal('${device.id}')">Editar</button>
+        <button class="btn-small" style="color: #ef4444" onclick="deleteDevice('${device.id}')">Remover</button>
+      </div>
+    `;
     devicesList.appendChild(item);
   });
   devicesStatus.textContent = formatJson(data.statusSnapshot);
 };
+
+const deviceModal = document.getElementById('device-modal');
+const deviceEditForm = document.getElementById('device-edit-form');
+const deviceControlsContainer = document.getElementById('device-controls-container');
+const tabControlsBtn = document.getElementById('tab-controls-btn');
+
+window.triggerDeviceAction = async (deviceId, action, params = {}) => {
+  try {
+    setStatus(`Executando ${action}...`);
+    const result = await fetchJson(`/api/devices/${deviceId}/actions/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    
+    // Check for Samsung unauthorized
+    if (result && typeof result.data === 'string' && result.data.includes('unauthorized')) {
+      alert('Atenção: Autorize o ELO na tela da sua TV Samsung!');
+      setStatus('Aguardando autorização na TV', false);
+    } else if (result && result.success === false) {
+      alert(`Erro: ${result.error}`);
+      setStatus('Erro na ação', false);
+    } else {
+      setStatus('Ação concluída');
+    }
+  } catch (error) {
+    alert(`Erro na ação: ${error.message}`);
+    setStatus('Erro na ação', false);
+  }
+};
+
+window.openDeviceModal = (id) => {
+  const device = allDevices[id];
+  if (!device) return;
+
+  const type = device.type || '';
+
+  document.getElementById('edit-device-id').value = device.id;
+  document.getElementById('edit-device-name').value = device.name;
+  document.getElementById('edit-device-room').value = device.room || '';
+  document.getElementById('edit-device-type').value = type;
+  document.getElementById('edit-device-ip').value = device.ip || '';
+  document.getElementById('edit-device-endpoint').value = device.endpoint || '';
+  document.getElementById('edit-device-protocol').value = device.protocol || '';
+  document.getElementById('edit-device-status').value = device.integrationStatus || 'unknown';
+
+  const notes = device.notes ? JSON.stringify(device.notes, null, 2) : (device.customNotes || '');
+  document.getElementById('edit-device-notes').value = notes;
+  
+  const hintEl = document.getElementById('edit-device-hint');
+  
+  const isTV = type.toLowerCase().includes('tv') || type.toLowerCase().includes('television');
+
+  // Set Hint
+  if (isTV) {
+    hintEl.textContent = 'Dica ELO: Para TVs, informe se há algum PIN ou se a porta 8001 está aberta.';
+  } else if (type === 'Camera') {
+    hintEl.textContent = 'Dica ELO: Informe o usuário/senha (ex: admin/admin) para eu tentar capturar o stream.';
+  } else if (type === 'Air Conditioner') {
+    hintEl.textContent = 'Dica ELO: Informe se é um modelo específico (ex: LG Thinq, Samsung Windfree).';
+  } else {
+    hintEl.textContent = '';
+  }
+
+  // Render Type Specific Controls
+  deviceControlsContainer.innerHTML = '';
+  if (isTV) {
+    deviceControlsContainer.innerHTML = `
+      <div class="remote-grid">
+        <button class="remote-key danger pill" style="grid-column: span 3; width: 100%" onclick="triggerDeviceAction('${id}', 'powerOff')">POWER OFF</button>
+        
+        <div style="grid-column: span 3; display: flex; justify-content: space-between; margin: 16px 0;">
+            <div class="remote-col">
+                <button class="remote-key" onclick="triggerDeviceAction('${id}', 'volumeUp')">+</button>
+                <div style="font-size: 10px; text-align: center; color: var(--text-muted)">VOL</div>
+                <button class="remote-key" onclick="triggerDeviceAction('${id}', 'volumeDown')">-</button>
+            </div>
+
+            <div class="dpad">
+                <div style="grid-column: 2">
+                    <button class="dpad-btn" onclick="triggerDeviceAction('${id}', 'up')">▲</button>
+                </div>
+                <div style="grid-row: 2; grid-column: 1">
+                    <button class="dpad-btn" onclick="triggerDeviceAction('${id}', 'left')">◀</button>
+                </div>
+                <div style="grid-row: 2; grid-column: 2">
+                    <button class="dpad-btn enter" onclick="triggerDeviceAction('${id}', 'enter')">OK</button>
+                </div>
+                <div style="grid-row: 2; grid-column: 3">
+                    <button class="dpad-btn" onclick="triggerDeviceAction('${id}', 'right')">▶</button>
+                </div>
+                <div style="grid-row: 3; grid-column: 2">
+                    <button class="dpad-btn" onclick="triggerDeviceAction('${id}', 'down')">▼</button>
+                </div>
+            </div>
+
+            <div class="remote-col">
+                <button class="remote-key" onclick="triggerDeviceAction('${id}', 'channelUp')">+</button>
+                <div style="font-size: 10px; text-align: center; color: var(--text-muted)">CH</div>
+                <button class="remote-key" onclick="triggerDeviceAction('${id}', 'channelDown')">-</button>
+            </div>
+        </div>
+
+        <div style="grid-column: span 3; display: flex; gap: 8px; margin-bottom: 12px;">
+            <button class="remote-key pill nav" style="flex: 1" onclick="triggerDeviceAction('${id}', 'mute')">MUTE</button>
+            <button class="remote-key pill nav" style="flex: 1" onclick="triggerDeviceAction('${id}', 'home')">HOME</button>
+            <button class="remote-key pill nav" style="flex: 1" onclick="triggerDeviceAction('${id}', 'back')">BACK</button>
+        </div>
+        
+        <div style="grid-column: span 3; margin-top: 20px; text-align: center;">
+            <button class="btn-small" onclick="triggerDeviceAction('${id}', 'getStatus')">Verificar Conexão</button>
+        </div>
+      </div>
+    `;
+  } else if (type === 'Camera') {
+    deviceControlsContainer.innerHTML = `
+      <div class="camera-preview">
+        <div class="muted">Aguardando snapshot...</div>
+        <!-- Em um cenário real, o ELO poderia servir o snapshot via proxy -->
+      </div>
+      <div class="remote-control" style="grid-template-columns: repeat(3, 1fr);">
+        <div></div><button class="remote-btn" onclick="triggerDeviceAction('${id}', 'moveUp')">▲</button><div></div>
+        <button class="remote-btn" onclick="triggerDeviceAction('${id}', 'moveLeft')">◀</button>
+        <button class="remote-btn" onclick="triggerDeviceAction('${id}', 'getStatus')">↻</button>
+        <button class="remote-btn" onclick="triggerDeviceAction('${id}', 'moveRight')">▶</button>
+        <div></div><button class="remote-btn" onclick="triggerDeviceAction('${id}', 'moveDown')">▼</button><div></div>
+      </div>
+    `;
+  } else if (type === 'Air Conditioner') {
+    deviceControlsContainer.innerHTML = `
+      <div class="ac-control">
+        <div class="temp-display" id="ac-temp-val">--°</div>
+        <div style="display: flex; gap: 20px;">
+          <button class="remote-btn" onclick="triggerDeviceAction('${id}', 'tempDown')">-</button>
+          <button class="remote-btn" onclick="triggerDeviceAction('${id}', 'tempUp')">+</button>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; margin-top: 20px;">
+          <button class="remote-btn large" onclick="triggerDeviceAction('${id}', 'setMode', {mode: 'cool'})">Frio</button>
+          <button class="remote-btn large" onclick="triggerDeviceAction('${id}', 'setMode', {mode: 'heat'})">Calor</button>
+          <button class="remote-btn large" onclick="triggerDeviceAction('${id}', 'powerOn')">Ligar</button>
+          <button class="remote-btn large" onclick="triggerDeviceAction('${id}', 'powerOff')">Desligar</button>
+        </div>
+      </div>
+    `;
+  } else {
+    deviceControlsContainer.innerHTML = `
+      <div class="card">
+        <h4>Ações Genéricas</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <button class="remote-btn large" onclick="triggerDeviceAction('${id}', 'powerOn')">Ligar</button>
+          <button class="remote-btn large" onclick="triggerDeviceAction('${id}', 'powerOff')">Desligar</button>
+          <button class="remote-btn large" onclick="triggerDeviceAction('${id}', 'getStatus')">Atualizar Status</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Handle Tab Navigation in Modal
+  const modalTabs = document.querySelectorAll('.modal-tab');
+  const modalPanels = document.querySelectorAll('.modal-panel');
+  
+  modalTabs.forEach(t => {
+    t.onclick = () => {
+      modalTabs.forEach(x => x.classList.remove('active'));
+      modalPanels.forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      const panel = document.getElementById(`modal-panel-${t.dataset.tab}`);
+      if (panel) panel.classList.add('active');
+    };
+  });
+
+  // Reset to first tab
+  modalTabs[0].click();
+  deviceModal.classList.add('active');
+};
+
+const btnRegenerate = document.getElementById('btn-regenerate');
+btnRegenerate.addEventListener('click', async () => {
+  const id = document.getElementById('edit-device-id').value;
+  btnRegenerate.textContent = 'Enviando...';
+  btnRegenerate.disabled = true;
+  
+  try {
+    // First save all current fields so the regeneration uses them
+    const updates = {
+      name: document.getElementById('edit-device-name').value,
+      room: document.getElementById('edit-device-room').value,
+      type: document.getElementById('edit-device-type').value,
+      ip: document.getElementById('edit-device-ip').value,
+      endpoint: document.getElementById('edit-device-endpoint').value,
+      protocol: document.getElementById('edit-device-protocol').value,
+      integrationStatus: document.getElementById('edit-device-status').value
+    };
+
+    const notesStr = document.getElementById('edit-device-notes').value;
+    if (notesStr.trim()) {
+      try { updates.notes = JSON.parse(notesStr); updates.customNotes = ''; } 
+      catch { updates.customNotes = notesStr; updates.notes = null; }
+    } else {
+      updates.notes = null;
+      updates.customNotes = '';
+    }
+    
+    await fetchJson(`/api/devices/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    
+    await fetchJson(`/api/devices/${id}/regenerate`, { method: 'POST' });
+    alert('Regeneração iniciada! Verifique o console ou as sugestões em breve.');
+    closeDeviceModal();
+  } catch (error) {
+    alert('Erro ao solicitar regeneração: ' + error.message);
+  } finally {
+    btnRegenerate.textContent = 'Recriar Driver (IA)';
+    btnRegenerate.disabled = false;
+  }
+});
+
+window.closeDeviceModal = () => {
+  deviceModal.classList.remove('active');
+};
+
+window.deleteDevice = async (id) => {
+  if (!confirm('Tem certeza que deseja remover este dispositivo?')) return;
+  try {
+    await fetchJson(`/api/devices/${id}`, { method: 'DELETE' });
+    loadDevices();
+  } catch (error) {
+    alert(error.message);
+  }
+};
+
+deviceEditForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('edit-device-id').value;
+  
+  const updates = {
+    name: document.getElementById('edit-device-name').value,
+    room: document.getElementById('edit-device-room').value,
+    type: document.getElementById('edit-device-type').value,
+    ip: document.getElementById('edit-device-ip').value,
+    endpoint: document.getElementById('edit-device-endpoint').value,
+    protocol: document.getElementById('edit-device-protocol').value,
+    integrationStatus: document.getElementById('edit-device-status').value
+  };
+
+  const notesStr = document.getElementById('edit-device-notes').value;
+  if (notesStr.trim()) {
+    try {
+      updates.notes = JSON.parse(notesStr);
+      updates.customNotes = ''; 
+    } catch {
+      updates.customNotes = notesStr;
+      updates.notes = null;
+    }
+  } else {
+    updates.notes = null;
+    updates.customNotes = '';
+  }
+
+  try {
+    await fetchJson(`/api/devices/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    closeDeviceModal();
+    loadDevices();
+  } catch (error) {
+    alert(error.message);
+  }
+});
 
 const renderDiscovery = (entries) => {
   discoveryList.textContent = entries.length ? formatJson(entries.slice(-12)) : 'Sem descobertas recentes.';

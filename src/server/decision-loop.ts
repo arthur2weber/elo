@@ -7,7 +7,7 @@ import { appendSuggestion } from '../cli/utils/suggestions';
 import { readDevices } from '../cli/utils/device-registry';
 import { promises as fs } from 'fs'; // Import fs
 import path from 'path'; // Import path
-import { buildDecisionContext, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
+import { buildDecisionContext, buildDeviceStatusHistory, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
 
 export type DecisionLoopOptions = {
   intervalMs?: number;
@@ -22,6 +22,7 @@ const MAX_PROMPT_STRING_LENGTH = 2000;
 const MAX_PROMPT_ARRAY_LENGTH = 20;
 const MAX_PROMPT_OBJECT_KEYS = 20;
 const MAX_PROMPT_DEPTH = 4;
+const STATUS_HISTORY_LIMIT = 40;
 
 const truncateString = (value: string, max = MAX_PROMPT_STRING_LENGTH) => {
   if (value.length <= max) return value;
@@ -103,9 +104,9 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
   }));
 
   const statusSnapshot = buildDeviceStatusSnapshot(logs);
+  const statusHistory = buildDeviceStatusHistory(logs, Math.min(logLimit, STATUS_HISTORY_LIMIT));
   const sanitizedLogs = logs.map((entry) => sanitizeForPrompt(entry)) as typeof logs;
-  const sanitizedRequests = requests.map((entry) => sanitizeForPrompt(entry)) as typeof requests;
-  const structuredContext = buildDecisionContext(devicesWithCapabilities, statusSnapshot, sanitizedRequests);
+  const structuredContext = buildDecisionContext(devicesWithCapabilities, statusSnapshot, statusHistory, requests);
   const sanitizedStructuredContext = sanitizeForPrompt(structuredContext) as typeof structuredContext;
   const decisionContext = formatDecisionContext(sanitizedStructuredContext);
   const trimmedPreferenceSummary = truncateString(preferenceSummary ?? '');

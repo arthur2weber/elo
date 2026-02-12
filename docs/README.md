@@ -18,12 +18,13 @@ O ELO é um motor de automação residencial agnóstico a protocolos, projetado 
    - Ciclo Observar → Abstrair → Codificar.
    - Sistema de Aprovações.
 4. [API & Interfaces](./04-api-reference.md)
-   - HTTP UI Endpoints.
-   - WebSocket / Eventos.
-5. [Guia de Operação](./05-operations.md)
-   - Setup com Docker.
-   - Estrutura de Logs.
-   - Troubleshooting.
+   - Endpoints do Servidor.
+   - Gerenciamento de Dispositivos e Drivers.
+5. [Guias de Dispositivos Específicos](./06-samsung-tizen-guide.md)
+   - Integração com Samsung Smart TV (Tizen).
+   - Uso de WebSockets e Tokens.
+6. [Operações & Deploy](./05-operations.md)
+   - Docker-compose, Logs e Volumes.
 
 ## 🚀 Conceitos Chave
 
