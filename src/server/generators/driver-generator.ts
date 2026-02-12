@@ -5,11 +5,13 @@ import { appendLogEntry } from '../../cli/utils/storage-files';
 import { verifyDriverProposal } from './driver-verifier';
 import { addDevice } from '../../cli/utils/device-registry';
 import { readDevices } from '../../cli/utils/device-registry'; // Import readDevices
+import { DEVICE_TEMPLATES } from './templates';
 import { promises as fs } from 'fs';
 import path from 'path';
 import axios from 'axios';
 import { probeTcpPort } from '../discovery';
 import { identifyDevice } from './device-identification';
+import { DISCOVERY_MAP, PROTOCOL_REFERENCES } from './knowledge-base';
 
 interface DiscoveryPayload {
     name?: string;
@@ -110,19 +112,18 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
         if (!targetIp) {
             return;
         }
-        const registered = await addDevice({
+        await addDevice({
             id: sanitizeId(`pending_${targetIp}`),
             name: fallbackDeviceName,
             type: payload.type || payload.signature || 'unknown',
             room: 'unknown',
+            endpoint: '',
             protocol: payload.protocol || payload.source || 'unknown',
-            ip: targetIp,
+            ip: targetIp || '',
             notes: payload.notes,
             integrationStatus: 'pending'
         });
-        if (registered.integrationStatus === 'pending') {
-            console.log(`[DriverGenerator] Marked ${targetIp} (${fallbackDeviceName}) as pending integration.`);
-        }
+        console.log(`[DriverGenerator] Marked ${targetIp} (${fallbackDeviceName}) as pending integration.`);
     };
 
     if (GLOBAL_ATTEMPT_TRACKER.get(trackingKey) && (GLOBAL_ATTEMPT_TRACKER.get(trackingKey)! >= MAX_GLOBAL_ATTEMPTS) && !payload.forceRegenerate) {
@@ -174,6 +175,18 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
     const maxAttempts = 3;
     let lastError: string | undefined = undefined;
 
+    // Enhance payload with Knowledge Base
+    let extraHints = [];
+    if (payload.type && DISCOVERY_MAP[payload.type]) {
+        extraHints.push(`Known pattern: Potential Home Assistant integration '${DISCOVERY_MAP[payload.type]}'`);
+    }
+    const signatureMatch = Object.entries(PROTOCOL_REFERENCES).find(([key, ref]) => 
+        payload.signature === key || (payload.port && ref.ports?.includes(payload.port))
+    );
+    if (signatureMatch) {
+        extraHints.push(`Protocol Reference: ${signatureMatch[0]} (See ${signatureMatch[1].repo}). Typical pattern: ${signatureMatch[1].patterns}`);
+    }
+
     try {
         let extraContext = {};
         
@@ -208,124 +221,210 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                 }
             }
 
+            // Define critical paths and identifiers
+            const devices = await readDevices();
+            const existing = devices.find(d => 
+                (targetMac && d.mac === targetMac) || 
+                (d.ip === targetIp && d.name === payload.name)
+            );
+            const driversDir = path.join(process.cwd(), 'logs', 'drivers');
+            let parsed: any;
+
             // Analyze device identity based on MAC and Ports
-            let identificationHint = identifyDevice(targetIp || '0.0.0.0', payload.port || 0, targetMac);
+            const txt = payload.txt as Record<string, any> | undefined;
+            
+            // PRIORITY 0: Look for a "Twin" device (Same Brand/Model already has a driver)
+            const manufacturer = txt?.manufacturer || (payload.name?.split(' ')[0]);
+            const model = txt?.model || payload.name;
+
+            if (manufacturer && model) {
+                const twin = devices.find(d => 
+                    d.id !== existing?.id && 
+                    (d.config?.model === model || d.name === payload.name) &&
+                    d.integrationStatus === 'ready'
+                );
+
+                if (twin) {
+                    const twinDriverPath = path.join(driversDir, `${twin.id}.json`);
+                    try {
+                        const content = await fs.readFile(twinDriverPath, 'utf-8');
+                        const twinConfig = JSON.parse(content);
+                        console.log(`[DriverGenerator] Twin match found! Copying driver from ${twin.id} to ${existing?.id || 'new device'}`);
+                        
+                        // Adapt IP in the twin config
+                        const adaptedActions = JSON.stringify(twinConfig.actions).replace(new RegExp(twin.ip, 'g'), targetIp || '127.0.0.1');
+                        
+                        parsed = {
+                            ...twinConfig,
+                            actions: JSON.parse(adaptedActions)
+                        };
+                    } catch (e) {
+                        // Twin has no driver or error reading it, proceed to template/AI
+                    }
+                }
+            }
+
+            let identityResult = identifyDevice(targetIp || '0.0.0.0', payload.port || 0, targetMac, {
+                name: payload.name,
+                manufacturer: txt?.manufacturer,
+                model: txt?.model
+            });
 
             // If no immediate hint, check scanned ports
-            if (!identificationHint && extraContext) {
+            if (!identityResult && extraContext) {
                  const ports = Object.keys(extraContext).map(Number);
                  for (const p of ports) {
-                     const hint = identifyDevice(targetIp || '0.0.0.0', p, targetMac);
-                     if (hint) {
-                         identificationHint = hint;
+                     const res = identifyDevice(targetIp || '0.0.0.0', p, targetMac, {
+                        name: payload.name,
+                        manufacturer: txt?.manufacturer,
+                        model: txt?.model
+                     });
+                     if (res) {
+                         identityResult = res;
                          break;
                      }
                  }
             }
 
-            if (identificationHint) {
-                console.log(`[DriverGenerator] Identification Hint for ${targetIp}: ${identificationHint.replace(/\n/g, ' ')}`);
-            }
-
-            // 1. Ask Gemini to fingerprint and generate configuration
-            const rawResponse = await runGeminiPrompt(prompts.generateDriver({
-                ip: targetIp || 'unknown',
-                port: payload.port || 0,
-                protocol: payload.protocol || payload.source,
-                rawInfo: rawInfoPretty,
-                identificationHint: identificationHint || undefined,
-                previousAttemptError: lastError,
-                userNotes: payload.notes ? JSON.stringify(payload.notes) : undefined
-            }), {
-                maxOutputTokens: 8192,
-                metadata: {
-                    source: 'driver:generate',
-                    tags: ['driver', 'automation'],
-                    extra: {
-                        attempt,
-                        hasTargetIp: Boolean(targetIp),
-                        protocol: payload.protocol || payload.source || 'unknown',
-                        rawInfoChars: rawInfoCompact.length,
-                        hasUserNotes: Boolean(payload.notes)
-                    }
+            if (identityResult) {
+                console.log(`[DriverGenerator] Identification Hint for ${targetIp}: ${identityResult.hint.replace(/\n/g, ' ')}`);
+                
+                // PRIORITY 1: Template Matching
+                if (identityResult.template && DEVICE_TEMPLATES[identityResult.template]) {
+                    console.log(`[DriverGenerator] MATCHED TEMPLATE: ${identityResult.template}. Skipping LLM.`);
+                    const template = DEVICE_TEMPLATES[identityResult.template];
+                    
+                    // Personalize template with IP
+                    const actionsStr = JSON.stringify(template.actions).replace(/<ip>/g, targetIp || '127.0.0.1');
+                    
+                    parsed = {
+                        deviceName: template.id,
+                        deviceType: template.type,
+                        capabilities: template.capabilities || [],
+                        actions: JSON.parse(actionsStr)
+                    };
                 }
-            });
-
-            // 2. Parse JSON response
-            const cleanJson = rawResponse.replace(/```json\n?|\n?```/g, '').trim();
-            const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-            
-            if (!jsonMatch) {
-                logCondensedError('[DriverGenerator] Invalid JSON Raw Response (No Match):', rawResponse);
-                lastError = "Invalid JSON format received from AI.";
-                continue;
             }
 
-            let parsed;
-            try {
-                parsed = JSON.parse(jsonMatch[0]);
-            } catch (error: any) {
-                logCondensedError('[DriverGenerator] JSON Parse Error:', error);
-                lastError = `JSON Parse Error: ${error.message}`;
-                continue;
+            // Phase 1: Strategic Identification (Optional AI call if deterministic identification is low confidence)
+            let strategyResult: any = null;
+            if (!identityResult || identityResult.hint.includes('unknown')) {
+                console.log(`[DriverGenerator] Deterministic ID failed for ${targetIp}. Requesting AI Strategy...`);
+                const strategyRaw = await runGeminiPrompt(prompts.identifyDeviceStrategy({
+                    ip: targetIp || 'unknown',
+                    port: payload.port || 0,
+                    protocol: payload.protocol || payload.source,
+                    rawInfo: rawInfoCompact
+                }), { metadata: { source: 'driver:strategy' } });
+                
+                try {
+                    const cleanStrategy = strategyRaw.replace(/```json\n?|\n?```/g, '').trim();
+                    strategyResult = JSON.parse(cleanStrategy);
+                    console.log(`[DriverGenerator] AI Strategy for ${targetIp}: ${strategyResult.brand} ${strategyResult.model} via ${strategyResult.protocol} (Conf: ${strategyResult.confidence})`);
+                } catch (e) {}
+            }
+
+            // 1. Ask Gemini IF we didn't match a template
+            if (!parsed) {
+                const combinedHint = [
+                    identityResult?.hint,
+                    strategyResult ? `AI Strategy Suggestion: Brand=${strategyResult.brand}, Model=${strategyResult.model}, Protocol=${strategyResult.protocol}, Strategy=${strategyResult.strategy}. Source: ${strategyResult.referenceRepo}` : null,
+                    ...extraHints
+                ].filter(Boolean).join('\n');
+
+                const rawResponse = await runGeminiPrompt(prompts.generateDriver({
+                    ip: targetIp || 'unknown',
+                    port: payload.port || 0,
+                    protocol: payload.protocol || payload.source,
+                    rawInfo: rawInfoPretty,
+                    identificationHint: combinedHint || undefined,
+                    previousAttemptError: lastError,
+                    userNotes: payload.notes ? JSON.stringify(payload.notes) : undefined
+                }), {
+                    maxOutputTokens: 8192,
+                    metadata: {
+                        source: 'driver:generate',
+                        tags: ['driver', 'automation'],
+                        extra: {
+                            attempt,
+                            hasTargetIp: Boolean(targetIp),
+                            protocol: payload.protocol || payload.source || 'unknown',
+                            rawInfoChars: rawInfoCompact.length,
+                            hasUserNotes: Boolean(payload.notes)
+                        }
+                    }
+                });
+
+                // 2. Parse JSON response
+                const cleanJson = rawResponse.replace(/```json\n?|\n?```/g, '').trim();
+                const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+                
+                if (!jsonMatch) {
+                    console.error('[DriverGenerator] Invalid JSON Raw Response (No Match):', rawResponse);
+                    lastError = "Invalid JSON format received from AI.";
+                    continue;
+                }
+
+                try {
+                    parsed = JSON.parse(jsonMatch[0]);
+                } catch (error: any) {
+                    console.error('[DriverGenerator] JSON Parse Error:', error);
+                    lastError = `JSON Parse Error: ${error.message}`;
+                    continue;
+                }
             }
 
             // 3. Auto-Verification (The "Test" Phase)
             const verification = await verifyDriverProposal(parsed);
             
-            const safeDeviceName = (parsed.deviceName || 'unknown_device').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+            const aiProposedName = (parsed.deviceName || 'unknown_device').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
             const suggestionId = `driver-${Date.now()}`;
-            
+
+            // Find existing device to use its ID as filename
+            const currentDevices = await readDevices();
+            const deviceEntry = currentDevices.find(d => d.ip === targetIp || d.ip === trackingKey);
+            const targetId = deviceEntry ? deviceEntry.id : aiProposedName;
+
             if (verification.success) {
-                console.log(`[DriverGenerator] Driver verified successfully for ${safeDeviceName}! Saving...`);
+                console.log(`[DriverGenerator] Driver verified successfully for ${targetId}! Saving...`);
                 
-                // Save directly to drivers folder
                 const driversDir = path.join(process.cwd(), 'logs', 'drivers');
                 await fs.mkdir(driversDir, { recursive: true });
-                const driverPath = path.join(driversDir, `${safeDeviceName}.json`);
+                const driverPath = path.join(driversDir, `${targetId}.json`);
 
                 let finalDriver = parsed;
 
                 try {
                     const existingContent = await fs.readFile(driverPath, 'utf-8');
                     const existingDriver = JSON.parse(existingContent);
-                    console.log(`[DriverGenerator] Driver already exists for ${safeDeviceName}, merging new actions...`);
-                    
                     finalDriver = {
                         ...existingDriver,
-                        // Update device metadata if the new one is more detailed? Maybe keep existing.
-                        // Let's merge actions.
                         actions: {
                             ...existingDriver.actions,
                             ...parsed.actions
                         }
                     };
-                } catch (err: any) {
-                    if (err.code !== 'ENOENT') {
-                        console.warn(`[DriverGenerator] Failed to read existing driver: ${err.message}`);
-                    }
-                    // File doesn't exist, use parsed as is
-                }
+                } catch (err: any) {}
 
                 await fs.writeFile(driverPath, JSON.stringify(finalDriver, null, 2));
 
-                // Register device in the official registry so it appears in the UI
                 await addDevice({
-                    id: safeDeviceName,
+                    id: targetId,
                     name: parsed.deviceName,
                     type: parsed.deviceType || 'generic',
-                    room: 'unknown', // User can edit this later in UI
-                    endpoint: parsed.actions?.getStatus?.url || '', // Best effort endpoint for monitoring
+                    room: 'unknown',
+                    endpoint: parsed.actions?.getStatus?.url || '',
                     protocol: 'http-generic',
-                    ip: targetIp,
+                    ip: targetIp || '',
+                    capabilities: parsed.capabilities || [],
                     notes: payload.notes,
-                    integrationStatus: 'ready'
+                    integrationStatus: verification.needsPairing ? 'pairing_required' : 'ready'
                 });
 
                 await appendSuggestion({
                     id: suggestionId,
                     timestamp: new Date().toISOString(),
-                    actionKey: `install_driver_${safeDeviceName}`,
+                    actionKey: `install_driver_${targetId}`,
                     automationName: parsed.deviceName,
                     message: `Configurei e validei automaticamente um driver para ${parsed.deviceName}. Ele já está pronto para uso!`,
                     code: JSON.stringify(parsed, null, 2),
@@ -336,36 +435,19 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     context: JSON.stringify(payload)
                 });
                 
-                return; // Exit successfully
+                return;
             } else {
-                const condensedVerificationError = extractLastLines(verification.error ?? 'Verification failed');
-                console.warn(`[DriverGenerator] Verification failed for ${safeDeviceName}: ${condensedVerificationError}`);
-                lastError = `Verification Failed: ${condensedVerificationError}. logic: ${verification.logs?.join(';')}`;
+                console.warn(`[DriverGenerator] Verification failed for ${targetId}: ${verification.error}`);
+                lastError = `Verification Failed: ${verification.error}. logic: ${verification.logs?.join(';')}`;
                 
-                // If this was the last attempt, save as PENDING so user can intervene
-                if (attempt === maxAttempts) {
+                if (attempt === 3) {
                     await registerPendingDevice();
-                    await appendSuggestion({
-                        id: suggestionId,
-                        timestamp: new Date().toISOString(),
-                        actionKey: `install_driver_${safeDeviceName}`,
-                        automationName: parsed.deviceName,
-                        message: `Tentei configurar o dispositivo ${parsed.deviceName} automaticamente 3 vezes, mas não consegui validar a conexão. Preciso de ajuda (chaves de API ou URL correta).`,
-                        code: JSON.stringify(parsed, null, 2),
-                        status: 'PENDING',
-                        requiredApprovals: 1,
-                        askAgain: true,
-                        rationale: `Falha na autoverificação: ${lastError}`,
-                        context: JSON.stringify(payload)
-                    });
                 }
             }
         }
     } catch (error) {
         await registerPendingDevice();
-        logCondensedError(`[DriverGenerator] Failed to generate driver for ${deviceKey}:`, error);
     } finally {
-        // Keep in queue for a while to avoid spamming generation attempts if discovery keeps firing
-        setTimeout(() => GENERATION_QUEUE.delete(deviceKey), 300000); // 5 minutes cooldown
+        GENERATION_QUEUE.delete(deviceKey);
     }
 };

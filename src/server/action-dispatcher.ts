@@ -1,5 +1,6 @@
 import { appendLogEntry } from '../cli/utils/storage-files';
 import { GenericHttpDriver, DriverResult } from '../drivers/http-generic';
+import { readDevices, addDevice, Device } from '../cli/utils/device-registry';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -19,7 +20,6 @@ export const dispatchAction = async (actionString: string) => {
 
   try {
     const driversDir = path.join(process.cwd(), 'logs', 'drivers');
-    // Using simple normalized lookup. Ideally we map alias -> ID.
     const driverPath = path.join(driversDir, `${device}.json`);
     
     let driverConfig;
@@ -40,41 +40,43 @@ export const dispatchAction = async (actionString: string) => {
 
     const driver = new GenericHttpDriver(driverConfig);
     
-    // Load device notes to use as parameters
+    // Load device parameters (notes, config, secrets)
     let params: Record<string, any> = {};
-    try {
-        const devicesPath = path.join(process.cwd(), 'logs', 'devices.json');
-        const devicesContent = await fs.readFile(devicesPath, 'utf-8');
-        const devices = JSON.parse(devicesContent);
-        const deviceData = devices.find((d: any) => d.id === device);
-        if (deviceData && deviceData.notes) {
+    const devices = await readDevices();
+    const deviceData = devices.find((d: Device) => d.id === device);
+    
+    if (deviceData) {
+        // Priority: secrets > config > notes
+        params = { 
+            ...(deviceData.config || {}), 
+            ...(deviceData.secrets || {}),
+            ip: deviceData.ip
+        };
+        
+        if (deviceData.notes) {
             if (typeof deviceData.notes === 'object') {
-                params = { ...deviceData.notes };
+                params = { ...params, ...deviceData.notes };
             } else if (typeof deviceData.notes === 'string') {
-                params = { token: deviceData.notes, notes: deviceData.notes };
+                params.token = params.token || deviceData.notes;
+                params.notes = deviceData.notes;
             }
         }
-    } catch (e) {
-        // Ignore errors loading notes
     }
 
     const result: DriverResult = await driver.executeAction(command, params);
 
-    // If metadata contains a token, update the device's notes/token
+    // If metadata contains a token, update the device's secrets/notes
     if (result.metadata && result.metadata.token) {
         console.log(`[ActionDispatcher] Capturing new token for ${device}`);
-        try {
-            const devicesPath = path.join(process.cwd(), 'logs', 'devices.json');
-            const devicesContent = await fs.readFile(devicesPath, 'utf-8');
-            const devices = JSON.parse(devicesContent);
-            const devIdx = devices.findIndex((d: any) => d.id === device);
-            if (devIdx !== -1) {
-                devices[devIdx].notes = result.metadata.token;
-                await fs.writeFile(devicesPath, JSON.stringify(devices, null, 2));
-                console.log(`[ActionDispatcher] Token persisted to devices.json`);
-            }
-        } catch (e) {
-            console.error(`[ActionDispatcher] Failed to persist token:`, e);
+        if (deviceData) {
+            await addDevice({
+                ...deviceData,
+                secrets: {
+                    ...(deviceData.secrets || {}),
+                    token: result.metadata.token
+                },
+                integrationStatus: 'ready'
+            });
         }
     }
 
@@ -82,18 +84,22 @@ export const dispatchAction = async (actionString: string) => {
         timestamp: new Date().toISOString(),
         device,
         event: 'action_dispatched',
-        payload: {
-            command,
-            source: 'chat_ui',
+        payload: { 
+            command, 
             status: result.success ? 'success' : 'failed',
-            result
+            result: {
+                success: result.success,
+                status: result.status,
+                error: result.error,
+                metadata: result.metadata
+            }
         }
     });
 
     return result;
 
   } catch (error: any) {
-    console.error('[ActionDispatcher] Unexpected error:', error);
-     return { success: false, error: error.message };
+    console.error(`[ActionDispatcher] Critical error dispatching to ${device}:`, error);
+    return { success: false, error: error.message };
   }
 };

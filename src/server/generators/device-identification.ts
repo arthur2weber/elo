@@ -1,4 +1,3 @@
-
 export const IDENTIFICATION_TABLES = {
     oui: [
         { name: "Apple", subtype: "iPhone / iPad / Watch", prefix: ["D0:D2:B0", "FC:FC:48", "00:0A:95"], ports: [62078, 5353], protocol: "mDNS (Bonjour), AWDL" },
@@ -17,7 +16,14 @@ export const IDENTIFICATION_TABLES = {
         { name: "Consoles", subtype: "Xbox One/Series", prefix: ["2C:F0:5D", "50:1A:C5"], ports: [5050, 49152], protocol: "SSDP, Portas Xbox Live" },
         { name: "Consoles", subtype: "Nintendo Switch", prefix: ["94:58:CB", "E0:E5:CF"], ports: [], protocol: "DHCP Hostname: Nintendo-Switch" },
         { name: "Smart TV", subtype: "LG (WebOS)", prefix: ["3C:CD:36", "A8:23:FE"], ports: [9955, 3000, 8080], protocol: "SSDP, mDNS (_lg_smart_tv._tcp)" },
-        { name: "Smart TV", subtype: "Samsung (Tizen)", prefix: ["48:44:F7", "64:1C:AE", "BC:72:B1"], ports: [8001, 8002, 1515], protocol: "SSDP, DLNA" },
+        { name: "Smart TV", subtype: "Samsung (Tizen)", prefix: ["48:44:F7", "64:1C:AE", "BC:72:B1", "D0:C2:4E", "CC:6E:A4", "70:2A:D5", "38:BB:23", "00:00:F0", "70:2A:D5"], ports: [8001, 8002, 1515], protocol: "SSDP, DLNA" },
+        { name: "Smart TV", subtype: "Sony Bravia", prefix: ["00:24:BE", "3C:07:71", "40:83:DE", "54:53:ED"], ports: [80, 8080, 2022], protocol: "SSDP (_sony-bravia._tcp)" },
+        { name: "Smart TV", subtype: "Vizio", prefix: ["00:07:D1", "00:1E:AE"], ports: [7345, 9000], protocol: "mDNS (_vizio._tcp)" },
+        { name: "Smart TV", subtype: "Panasonic", prefix: ["00:0B:97", "44:61:32"], ports: [8080], protocol: "UPnP (Viera)" },
+        { name: "IoT", subtype: "Espressif (ESP8266/ESP32)", prefix: ["24:0A:C4", "30:AE:A4", "A4:CF:12", "D8:F1:5B", "EC:FA:BC"], ports: [80, 8266], protocol: "mDNS, HTTP" },
+        { name: "IoT", subtype: "Shelly (Allterco)", prefix: ["40:22:D8", "84:F3:EB", "C8:C9:A3"], ports: [80, 1883], protocol: "mDNS (_shelly._tcp)" },
+        { name: "Network", subtype: "Ubiquiti UniFi", prefix: ["00:15:6D", "04:18:D6", "18:E8:29", "24:A4:3C", "44:D9:E7", "68:72:51", "70:A7:41", "74:83:C2", "80:2A:A8", "B4:FB:E4", "FC:EC:DA"], ports: [80, 443, 8080], protocol: "mDNS, HTTP" },
+        { name: "Network", subtype: "MikroTik", prefix: ["00:0C:42", "2C:C8:1B", "48:8F:5A", "64:D1:54", "E4:8D:8C"], ports: [80, 443, 8291, 8728], protocol: "MNDP, SNMP" },
         { name: "Computador", subtype: "Windows PC", prefix: ["00:15:5D", "A4:BB:6D"], ports: [135, 139, 445, 3389], protocol: "NetBIOS, LLMNR, SSDP" },
         { name: "Computador", subtype: "MacBook / Mac Mini", prefix: ["F4:0F:24", "AC:BC:32"], ports: [548, 5900], protocol: "Bonjour (_afpovertcp._tcp)" },
         { name: "Impressora", subtype: "HP / Epson / Brother", prefix: ["00:18:71", "00:80:77"], ports: [9100, 631], protocol: "mDNS, SNMP" }
@@ -113,8 +119,13 @@ export const IDENTIFICATION_TABLES = {
     } as Record<number, string>
 };
 
-export const identifyDevice = (ip: string, port: number, mac?: string, headers?: Record<string, string>): string | null => {
+export const identifyDevice = (ip: string, port: number, mac?: string, extra?: { name?: string, manufacturer?: string, model?: string }): { hint: string, template?: string } | null => {
     let hints: string[] = [];
+    let templateId: string | undefined;
+
+    const normalizedName = (extra?.name || '').toLowerCase();
+    const normalizedManufacturer = (extra?.manufacturer || '').toLowerCase();
+    const normalizedModel = (extra?.model || '').toLowerCase();
 
     // 1. Check OUI/MAC
     if (mac) {
@@ -126,6 +137,7 @@ export const identifyDevice = (ip: string, port: number, mac?: string, headers?:
 
         if (match) {
             hints.push(`MAC Address suggests: ${match.name} (${match.subtype}). Protocol: ${match.protocol}`);
+            if (match.subtype.includes('Samsung')) templateId = 'samsung-tizen-tv';
         }
     }
 
@@ -133,6 +145,13 @@ export const identifyDevice = (ip: string, port: number, mac?: string, headers?:
     const portService = IDENTIFICATION_TABLES.ports[port];
     if (portService) {
         hints.push(`Port ${port} is typically used by: ${portService}.`);
+        if (port === 8001 || port === 8002) templateId = 'samsung-tizen-tv';
+    }
+
+    // 3. Check Metadata (Name, Manufacturer)
+    if (normalizedManufacturer.includes('samsung') || normalizedName.includes('samsung') || normalizedModel.includes('qaq80')) {
+        hints.push(`Metadata indicates a Samsung device.`);
+        templateId = 'samsung-tizen-tv';
     }
 
     // 3. Combine hints
@@ -140,5 +159,8 @@ export const identifyDevice = (ip: string, port: number, mac?: string, headers?:
         return null;
     }
 
-    return `Device Identification Analysis:\n- ${hints.join('\n- ')}`;
+    return {
+        hint: `Device Identification Analysis:\n- ${hints.join('\n- ')}`,
+        template: templateId
+    };
 };

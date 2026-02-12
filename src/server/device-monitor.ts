@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { appendLogEntry } from '../cli/utils/storage-files';
-import { DeviceConfig, readDevices } from '../cli/utils/device-registry';
+import { Device as DeviceConfig, readDevices } from '../cli/utils/device-registry';
 
 type MonitorOptions = {
   intervalMs?: number;

@@ -113,6 +113,25 @@ export const prompts = {
             `RawHex: ${input.rawHex}`
         ].join('\n');
     },
+    identifyDeviceStrategy: (input: {
+        ip: string;
+        port: number;
+        protocol: string;
+        rawInfo: string;
+    }) => {
+        return [
+            'You are an IoT Discovery Strategist.',
+            'Your job is to look at raw discovery data and decide the best technical approach to control this device.',
+            'Identify the manufacturer, model, and the most reliable local API protocol (REST, WebSocket, MQTT, CoAP, etc).',
+            'Reference known open-source drivers (Home Assistant, Zigbee2MQTT, etc).',
+            'Return JSON only: { "brand": string, "model": string, "protocol": string, "referenceRepo": string, "strategy": string, "confidence": number }.',
+            `Discovery Data:`,
+            `IP: ${input.ip}`,
+            `Port: ${input.port}`,
+            `Protocol: ${input.protocol}`,
+            `Metadata: ${input.rawInfo}`
+        ].join('\n');
+    },
     generateDriver: (input: {
         ip: string;
         port: number;
@@ -177,12 +196,27 @@ export const prompts = {
         return [
             'You are a smart home connectivity assistant.',
             'Your task is to generate a declarative HTTP driver configuration for the discovered device.',
+            'You have been trained on major open-source home automation repositories:',
+            '- Home Assistant Core (integrations)',
+            '- Zigbee2MQTT (zigbee-herdsman-converters)',
+            '- Z-Wave JS (node-zwave-js)',
+            '- Shelly / Tasmota / WLED / Miio API standards',
+            '- Scrypted / Homebridge plugin ecosystems',
+            '- Matter.js (project-chip/matter.js)',
+            'Use your specialized knowledge of these Node.js/TypeScript repositories to infer the exact API endpoints and JSON schemas for this device.',
             input.userNotes ? `CRITICAL USER CONTEXT: The user provided these credentials/notes: ${input.userNotes}. Use them to build authenticated URLs if needed.` : '',
             'Do NOT generate TypeScript code. Generate a JSON configuration that a generic HTTP client can use.',
             'ALLOWED METHODS: "GET", "POST", "PUT", "DELETE", "WS" (WebSocket).',
             'SAMSUNG TIZEN EXAMPLE (FOLLOW THIS EXACT PATTERN):',
             JSON.stringify(samsungExample, null, 2),
-            'Return JSON only: { "deviceName": string, "deviceType": string, "actions": Record<string, { method: "GET"|"POST"|"PUT"|"WS", url: string, headers?: Record<string, string>, body?: string, notes?: string }> }.',
+            'Return JSON only: { "deviceName": string, "deviceType": string, "capabilities": string[], "actions": Record<string, { method: "GET"|"POST"|"PUT"|"WS", url: string, headers?: Record<string, string>, body?: string, notes?: string }> }.',
+            'CAPABILITIES: Map the device to standard categories like "on_off", "brightness", "media_control", "volume", "temperature_sensor", etc.',
+            'COMMAND NORMALIZATION (CRITICAL): Use these exact keys for typical actions:',
+            '- "on", "off" (Always prefer these over powerOn/powerOff)',
+            '- "volume_up", "volume_down", "mute"',
+            '- "play", "pause", "stop", "next", "previous"',
+            '- "brightness_up", "brightness_down"',
+            '- "status" (for current state)',
             'Rules:',
             '- Infer the likely API endpoints based on metadata, standard IoT protocols (Hue, Tuya, Tasmota, Shelly, ESPHome, etc), or available ports.',
             '- Typically useful actions: "powerOn", "powerOff", "toggle", "getStatus".',

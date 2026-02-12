@@ -236,6 +236,7 @@ window.openDeviceModal = (id) => {
         
         <div style="grid-column: span 3; margin-top: 20px; text-align: center;">
             <button class="btn-small" onclick="triggerDeviceAction('${id}', 'getStatus')">Verificar Conexão</button>
+            <button class="btn-small auth-btn" onclick="triggerDevicePairing('${id}')">Solicitar Pareamento</button>
         </div>
       </div>
     `;
@@ -532,3 +533,24 @@ tabs.forEach((tab) => {
 
 refreshAll();
 setInterval(refreshAll, 15000);
+
+window.triggerDevicePairing = async (id) => {
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.textContent = 'Solicitando...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetchJson(`/api/devices/${id}/pair`, { method: 'POST' });
+    if (res.success) {
+      alert('Solicitação enviada! Verifique se apareceu uma mensagem na tela da TV e autorize o ELO.');
+    } else {
+      alert('Falha ao solicitar pareamento: ' + (res.error || 'Erro desconhecido'));
+    }
+  } catch (error) {
+    alert('Erro de rede: ' + error.message);
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+};

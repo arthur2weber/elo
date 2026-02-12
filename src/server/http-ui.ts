@@ -404,6 +404,17 @@ export const registerHttpUi = (app: express.Express) => {
     }
   });
 
+  app.post('/api/devices/:id/pair', async (req, res) => {
+    const { id } = req.params;
+    console.log(`[API] Requested pairing for device ${id}`);
+    try {
+      const result = await dispatchAction(`${id}=requestPairing`);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   app.delete('/api/devices/:id', async (req, res) => {
     try {
       const { id } = req.params;

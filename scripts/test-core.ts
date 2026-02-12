@@ -64,6 +64,9 @@ const run = async () => {
   await addDevice({
     id: 'office-thermostat',
     name: 'Thermostat',
+    type: 'thermostat',
+    protocol: 'http',
+    ip: '127.0.0.1',
     room: 'office',
     endpoint: 'http://localhost:8081/status'
   });
