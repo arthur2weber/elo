@@ -144,11 +144,12 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
         const list = await readDevices();
         const existing = list.find((d) => (d.ip?.trim() ?? '') === (targetIp ?? trackingKey));
         if (existing && !payload.forceRegenerate) {
-            if (existing.integrationStatus === 'pending') {
-                console.log(`[DriverGenerator] Pending integration acknowledged for ${existing.name || existing.id} (${trackingKey}). Skipping automated generation.`);
-                GENERATION_QUEUE.delete(deviceKey);
-                return;
-            }
+            // If pending, we SHOULD attempt generation if the driver file is missing.
+            // if (existing.integrationStatus === 'pending') {
+            //    console.log(`[DriverGenerator] Pending integration acknowledged for ${existing.name || existing.id} (${trackingKey}). Skipping automated generation.`);
+            //    GENERATION_QUEUE.delete(deviceKey);
+            //    return;
+            // }
             const driverPath = path.join(driversDir, `${existing.id}.json`);
             try {
                 // If the driver file exists, we check the metadata to see if we should enhance it
@@ -194,8 +195,34 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
             const rawInfoPretty = JSON.stringify(combinedInfo, null, 2);
             const rawInfoCompact = JSON.stringify(combinedInfo);
             
+            // Extract MAC from TXT if available and not in payload
+            let targetMac = payload.mac;
+            if (!targetMac && payload.txt) {
+                const possibleKeys = ['deviceid', 'mac', 'address', 'serialNumber', 'uniqueid'];
+                for (const key of possibleKeys) {
+                    const val = payload.txt[key];
+                    if (typeof val === 'string' && (val.includes(':') || val.length === 12)) {
+                        targetMac = val;
+                        break;
+                    }
+                }
+            }
+
             // Analyze device identity based on MAC and Ports
-            const identificationHint = identifyDevice(targetIp || '0.0.0.0', payload.port || 0, payload.mac);
+            let identificationHint = identifyDevice(targetIp || '0.0.0.0', payload.port || 0, targetMac);
+
+            // If no immediate hint, check scanned ports
+            if (!identificationHint && extraContext) {
+                 const ports = Object.keys(extraContext).map(Number);
+                 for (const p of ports) {
+                     const hint = identifyDevice(targetIp || '0.0.0.0', p, targetMac);
+                     if (hint) {
+                         identificationHint = hint;
+                         break;
+                     }
+                 }
+            }
+
             if (identificationHint) {
                 console.log(`[DriverGenerator] Identification Hint for ${targetIp}: ${identificationHint.replace(/\n/g, ' ')}`);
             }
@@ -206,7 +233,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                 port: payload.port || 0,
                 protocol: payload.protocol || payload.source,
                 rawInfo: rawInfoPretty,
-                identificationHint: identificationHint,
+                identificationHint: identificationHint || undefined,
                 previousAttemptError: lastError,
                 userNotes: payload.notes ? JSON.stringify(payload.notes) : undefined
             }), {

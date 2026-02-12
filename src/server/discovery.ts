@@ -52,9 +52,9 @@ const isIpAlreadyRegistered = async (ip: string): Promise<boolean> => {
 const DEFAULT_SCAN_PORTS = [4387, 554, 8899, 8001, 8002, 1515];
 const DEFAULT_SCAN_TIMEOUT_MS = 250;
 const DEFAULT_SCAN_CONCURRENCY = 64;
-const DEFAULT_SCAN_INTERVAL_MS = 300000; // 5 minutos (era 0)
-const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 600000; // 10 minutos (era 60000)
-const DEFAULT_SSDP_INTERVAL_MS = 600000; // 10 minutos (era 60000)
+const DEFAULT_SCAN_INTERVAL_MS = 60000; // 1 minuto 
+const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 90000; // 1 minuto e meio 
+const DEFAULT_SSDP_INTERVAL_MS = 75000; // 1 minuto e 15 segundos 
 const DEFAULT_FINGERPRINT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_FINGERPRINT_TIMEOUT_MS = 1500;
 const SSDP_ADDRESS = '239.255.255.250';

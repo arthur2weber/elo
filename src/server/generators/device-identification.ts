@@ -113,7 +113,7 @@ export const IDENTIFICATION_TABLES = {
     } as Record<number, string>
 };
 
-export const identifyDevice = (ip: string, port: number, mac?: string, headers?: Record<string, string>): string => {
+export const identifyDevice = (ip: string, port: number, mac?: string, headers?: Record<string, string>): string | null => {
     let hints: string[] = [];
 
     // 1. Check OUI/MAC
@@ -137,7 +137,7 @@ export const identifyDevice = (ip: string, port: number, mac?: string, headers?:
 
     // 3. Combine hints
     if (hints.length === 0) {
-        return "No specific identification hints found based on common IoT ports or MAC OUI.";
+        return null;
     }
 
     return `Device Identification Analysis:\n- ${hints.join('\n- ')}`;

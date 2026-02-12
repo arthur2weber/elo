@@ -130,6 +130,7 @@ export const prompts = {
                 '  - PORT: 8002 (Secure) is preferred over 8001.',
                 '  - URL: "wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVNtYXJ0JmF1dGg9MQ==&token={token}".',
                 '  - The "{token}" placeholder is CRITICAL; it allows the engine to inject the security token from device notes to avoid daily re-authorization.',
+                '  - INCLUDE action "request_authorization": Same URL/Method, but uses KEY_HOME or similar. Purpose: Force the TV to show the "Allow" popup.',
                 '  - PAYLOAD: {"method":"ms.remote.control","params":{"Cmd":"Click","DataOfCmd":"KEY_XXXX","Option":"false","TypeOfRemote":"SendRemoteKey"}}.',
                 '  - Common Keys: KEY_POWER, KEY_VOLUP, KEY_VOLDOWN, KEY_MUTE, KEY_CHUP, KEY_CHDOWN, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ENTER, KEY_RETURN, KEY_HOME.',
                 '  - For Volume/Mute, you can also consider UPnP port 9197 RenderingControl as a secondary fallback.'
