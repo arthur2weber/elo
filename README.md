@@ -54,6 +54,70 @@ O servidor do ELO já expõe uma interface web simples para monitorar o estado e
 
 > ⚠️ Ao atualizar chaves via UI, reinicie o processo do servidor para aplicar as variáveis.
 
+## 🚦 Quick start
+
+Requisitos mínimos:
+
+- Node.js (>=16) e npm
+- Ou Docker + docker-compose
+
+Passos rápidos (desenvolvimento):
+
+1. Instale dependências:
+
+	```bash
+	npm ci
+	```
+
+2. Configure variáveis de ambiente (ex: `.env`) com a sua chave Gemini e outras opções:
+
+	- `GEMINI_API_KEY` — chave da API de LLM (requerido para geração automática)
+	- `GEMINI_API_MODEL` — modelo a usar (opcional)
+	- `GEMINI_CLI_BIN`, `THINKING_BUDGET` — opções avançadas
+
+3. Inicie a aplicação:
+
+	- Localmente (usa `ts-node`):
+
+	  ```bash
+	  npm start
+	  ```
+
+	- Em container (recomenda-se para ambientes isolados):
+
+	  ```bash
+	  docker-compose up -d
+	  ```
+
+4. Abra a UI em: `http://localhost:3000`
+
+## ⚙️ Configuração
+
+O ELO lê variáveis de ambiente do arquivo `.env` na raiz (veja `src/server/config.ts`). Se preferir, defina as mesmas variáveis no `docker-compose.yml` para execução em container.
+
+Variáveis importantes:
+
+- `GEMINI_API_KEY` — chave para integração com a LLM (necessária para gerar drivers e usar recursos de IA).
+- `GEMINI_API_MODEL` — nome do modelo/endpoint a ser usado (opcional).
+- `GEMINI_CLI_BIN` / `GEMINI_CLI_ARGS` — se estiver usando um wrapper de CLI local.
+
+## 📚 Documentação
+
+Toda a documentação prática e guias estão em `./docs` (arquivos Markdown). Alguns pontos úteis:
+
+- `docs/01-architecture.md` — visão geral da arquitetura.
+- `docs/03-server.md` — como o servidor expõe a HTTP UI e endpoints.
+- `docs/04-generators.md` — como o driver-generator funciona e onde ajustar prompts/KB.
+- `docs/05-drivers.md` — formato de drivers, placeholders e exemplos.
+- `docs/06-samsung-tizen-guide.md` — guia específico para TVs Samsung/Tizen.
+- `docs/07-dev-setup.md` — passos adicionais de desenvolvimento.
+
+Se for contribuir com docs, edite os arquivos em `./docs` e submeta um PR. Procure manter exemplos concretos e referenciar arquivos fonte quando relevante.
+
+## 📂 Logs e artefatos
+
+Os artefatos gerados e logs ficam em `./logs` (ex.: `logs/drivers/`, `logs/events.jsonl`, `logs/suggestions.jsonl`).
+
 ## Por que esta estrutura é superior para o Codex?
 
 - **Abstração de Marca:** Note que não citamos "Samsung" ou "Gree". Falamos de "Protocolos Proprietários" e "WebSockets". Isso força o Codex a escrever código genérico e modular.
