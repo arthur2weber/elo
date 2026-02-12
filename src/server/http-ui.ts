@@ -68,7 +68,7 @@ const parseChatJson = (text: string) => {
 };
 
 const isOffTopic = (text: string) =>
-  /(rating|placar|jogador|torneio|liga|pontua|partida|score|match|game|automation engine|modelo de linguagem|sem acesso ao ambiente|não tenho acesso|sou uma inteligência artificial|capacidade de interagir|mundo físico|minha programação|aparelho de ar-condicionado|luzes indicadoras|sinta o ar|ouça o aparelho|verifique a energia)/i.test(text);
+  /()/i.test(text);
 
 const fallbackReply = () =>
   'Bom dia (DEBUG). Estou à disposição para cuidar da casa e dos dispositivos. O que deseja ajustar agora?';
@@ -300,27 +300,32 @@ export const registerHttpUi = (app: express.Express) => {
       // END DEBUG LOG
 
       // START MODIFIED BLOCK
-      if (!parsed || isOffTopic(replyText)) {
-        const fallback = fallbackReply();
-        rememberMessage(sessionKey, {
-          role: 'assistant',
-          message: fallback,
-          timestamp: new Date().toISOString()
-        });
-        await appendRequestLog({
-          timestamp: new Date().toISOString(),
-          user: typeof user === 'string' ? user : 'default',
-          request: message,
-          context,
-          payload: {
-            channel: 'web-ui',
-            sessionId: typeof sessionId === 'string' ? sessionId : undefined,
-            originalReply: rawReply,
-            fallbackReason: !parsed ? 'json_parse_error' : 'off_topic_detected'
-          }
-        });
-        res.json({ success: true, data: { reply: fallback, action: null } });
-        return;
+      // if (isOffTopic(replyText)) {
+      //   const fallback = fallbackReply();
+      //   rememberMessage(sessionKey, {
+      //     role: 'assistant',
+      //     message: fallback,
+      //     timestamp: new Date().toISOString()
+      //   });
+      //   await appendRequestLog({
+      //     timestamp: new Date().toISOString(),
+      //     user: typeof user === 'string' ? user : 'default',
+      //     request: message,
+      //     context,
+      //     payload: {
+      //       channel: 'web-ui',
+      //       sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+      //       originalReply: rawReply,
+      //       fallbackReason: 'off_topic_detected'
+      //     }
+      //   });
+      //   res.json({ success: true, data: { reply: fallback, action: null } });
+      //   return;
+      // }
+      
+      // If parsing failed, we use the raw reply as the message (Best Effort)
+      if (!parsed) {
+         console.warn('[Chat] JSON Parsing failed. Using raw reply.');
       }
       // END MODIFIED BLOCK
 
@@ -346,7 +351,7 @@ export const registerHttpUi = (app: express.Express) => {
         await dispatchAction(parsed.action);
       }
 
-      res.json({ success: true, data: { reply: clamped, action: parsed.action } });
+      res.json({ success: true, data: { reply: clamped, action: parsed ? parsed.action : null } });
     } catch (error) {
       res.status(500).json({ success: false, error: (error as Error).message });
     }
