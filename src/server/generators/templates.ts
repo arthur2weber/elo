@@ -55,6 +55,54 @@ export const DEVICE_TEMPLATES: Record<string, DeviceTemplate> = {
                     }
                 })
             },
+            'up': {
+                method: 'WS',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
+                body: JSON.stringify({
+                    method: 'ms.remote.control',
+                    params: { Cmd: 'Click', DataOfCmd: 'KEY_UP', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+                })
+            },
+            'down': {
+                method: 'WS',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
+                body: JSON.stringify({
+                    method: 'ms.remote.control',
+                    params: { Cmd: 'Click', DataOfCmd: 'KEY_DOWN', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+                })
+            },
+            'left': {
+                method: 'WS',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
+                body: JSON.stringify({
+                    method: 'ms.remote.control',
+                    params: { Cmd: 'Click', DataOfCmd: 'KEY_LEFT', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+                })
+            },
+            'right': {
+                method: 'WS',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
+                body: JSON.stringify({
+                    method: 'ms.remote.control',
+                    params: { Cmd: 'Click', DataOfCmd: 'KEY_RIGHT', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+                })
+            },
+            'enter': {
+                method: 'WS',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
+                body: JSON.stringify({
+                    method: 'ms.remote.control',
+                    params: { Cmd: 'Click', DataOfCmd: 'KEY_ENTER', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+                })
+            },
+            'home': {
+                method: 'WS',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
+                body: JSON.stringify({
+                    method: 'ms.remote.control',
+                    params: { Cmd: 'Click', DataOfCmd: 'KEY_HOME', Option: 'false', TypeOfRemote: 'SendRemoteKey' }
+                })
+            },
             'volume_up': {
                 method: 'WS',
                 url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',

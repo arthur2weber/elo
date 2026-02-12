@@ -221,6 +221,7 @@ export const prompts = {
             '- "on", "off" (Always prefer these over powerOn/powerOff)',
             '- "volume_up", "volume_down", "mute"',
             '- "play", "pause", "stop", "next", "previous"',
+            '- "up", "down", "left", "right", "enter", "back", "home", "menu", "info" (Crucial for TV navigation)',
             '- "brightness_up", "brightness_down"',
             '- "status" (for current state)',
             'Rules:',
