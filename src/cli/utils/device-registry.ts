@@ -26,7 +26,7 @@ export interface Device {
     ip: string;
     mac?: string;
     integrationStatus?: 'discovered' | 'ready' | 'error' | 'pairing_required' | 'pending';
-    capabilities?: DeviceCapability[];
+    capabilities?: (DeviceCapability | string)[];
     secrets?: Record<string, string>;
     config?: Record<string, any>;
     notes?: any;

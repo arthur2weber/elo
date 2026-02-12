@@ -246,11 +246,28 @@ main {
   color: var(--bg-main);
 }
 
-.dpad-btn.enter {
-  background: var(--bg-card);
-  border-radius: 50%;
-  font-size: 12px;
-  font-weight: bold;
+/* Mobile responsiveness */
+@media (max-width: 600px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+  }
+  
+  .tabs {
+    padding: 8px 16px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  
+  main {
+    padding: 16px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Vol/CH Columns */

@@ -22,6 +22,7 @@
       <button class="tab" data-tab="discovery">Descoberta</button>
       <button class="tab" data-tab="config">Keys</button>
       <button class="tab" data-tab="suggestions">Sugestões</button>
+      <button class="tab" data-tab="system" style="margin-left: auto; color: #ef4444">Sistema</button>
     </nav>
 
     <main>
@@ -115,6 +116,18 @@
           <pre id="suggestions-list" class="code-block">Carregando...</pre>
         </div>
       </section>
+
+      <section class="panel" id="panel-system">
+        <div class="card" style="border-color: #ef4444">
+          <h3 style="color: #ef4444">Zona de Perigo</h3>
+          <p class="muted">Ações irreversíveis do sistema.</p>
+          <div style="margin-top: 24px; padding: 24px; background: rgba(239, 68, 68, 0.1); border-radius: 12px; border: 1px dashed #ef4444">
+            <h4>Reset Total</h4>
+            <p style="font-size: 13px; margin-bottom: 16px;">Isso apagará todos os dispositivos pareados, logs de eventos e drivers gerados pela IA.</p>
+            <button id="reset-system-btn" style="width: 100%; padding: 12px; font-weight: bold; cursor: pointer; border: 1px solid #ef4444; background: #ef4444; color: white; border-radius: 8px;">LIMPAR TODO O SISTEMA</button>
+          </div>
+        </div>
+      </section>
     </main>
 
     <div id="device-modal" class="modal">
@@ -195,6 +208,10 @@
         </div>
       </div>
     </div>
+
+    <footer class="footer">
+      <div id="reset-trigger" style="opacity: 0.05; cursor: pointer; font-size: 10px; margin-top: 40px; text-align: center;">ELO_PURGE_v1.0</div>
+    </footer>
 
     <script src="/app.js"></script>
   </body>

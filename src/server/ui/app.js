@@ -14,6 +14,32 @@ const chatThread = document.getElementById('chat-thread');
 const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
 const configForm = document.getElementById('config-form');
+const resetSystemBtn = document.getElementById('reset-system-btn');
+
+if (resetSystemBtn) {
+  resetSystemBtn.addEventListener('click', async () => {
+    const confirmed = confirm('ATENÇÃO: Isso irá apagar TODOS os dispositivos, logs e drivers do sistema. Deseja continuar?');
+    if (!confirmed) return;
+    
+    const secondConfirm = confirm('Tem certeza ABSOLUTA? Esta ação não pode ser desfeita.');
+    if (!secondConfirm) return;
+
+    try {
+      setStatus('Limpando sistema...');
+      const response = await fetch('/api/system/reset', { method: 'POST' });
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('Sistema resetado com sucesso. Recarregando...');
+        window.location.reload();
+      } else {
+        alert(`Erro ao resetar: ${result.error}`);
+      }
+    } catch (error) {
+      alert(`Erro na comunicação: ${error.message}`);
+    }
+  });
+}
 
 const getSessionId = () => {
   const key = 'elo-session-id';
@@ -194,13 +220,13 @@ window.openDeviceModal = (id) => {
   if (isTV) {
     deviceControlsContainer.innerHTML = `
       <div class="remote-grid">
-        <button class="remote-key danger pill" style="grid-column: span 3; width: 100%" onclick="triggerDeviceAction('${id}', 'powerOff')">POWER OFF</button>
+        <button class="remote-key danger pill" style="grid-column: span 3; width: 100%" onclick="triggerDeviceAction('${id}', 'off')">POWER OFF</button>
         
         <div style="grid-column: span 3; display: flex; justify-content: space-between; margin: 16px 0;">
             <div class="remote-col">
-                <button class="remote-key" onclick="triggerDeviceAction('${id}', 'volumeUp')">+</button>
+                <button class="remote-key" onclick="triggerDeviceAction('${id}', 'volume_up')">+</button>
                 <div style="font-size: 10px; text-align: center; color: var(--text-muted)">VOL</div>
-                <button class="remote-key" onclick="triggerDeviceAction('${id}', 'volumeDown')">-</button>
+                <button class="remote-key" onclick="triggerDeviceAction('${id}', 'volume_down')">-</button>
             </div>
 
             <div class="dpad">
@@ -235,7 +261,7 @@ window.openDeviceModal = (id) => {
         </div>
         
         <div style="grid-column: span 3; margin-top: 20px; text-align: center;">
-            <button class="btn-small" onclick="triggerDeviceAction('${id}', 'getStatus')">Verificar Conexão</button>
+            <button class="btn-small" onclick="triggerDeviceAction('${id}', 'status')">Verificar Conexão</button>
             <button class="btn-small auth-btn" onclick="triggerDevicePairing('${id}')">Solicitar Pareamento</button>
         </div>
       </div>
@@ -531,6 +557,7 @@ tabs.forEach((tab) => {
   });
 });
 
+// Load initial data
 refreshAll();
 setInterval(refreshAll, 15000);
 
@@ -545,7 +572,8 @@ window.triggerDevicePairing = async (id) => {
     if (res.success) {
       alert('Solicitação enviada! Verifique se apareceu uma mensagem na tela da TV e autorize o ELO.');
     } else {
-      alert('Falha ao solicitar pareamento: ' + (res.error || 'Erro desconhecido'));
+      const errMsg = typeof res.error === 'string' ? res.error : JSON.stringify(res.error || 'Erro desconhecido');
+      alert('Falha ao solicitar pareamento: ' + errMsg);
     }
   } catch (error) {
     alert('Erro de rede: ' + error.message);

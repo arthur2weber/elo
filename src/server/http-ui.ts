@@ -454,7 +454,7 @@ export const registerHttpUi = (app: express.Express) => {
     }
   });
 
-  app.post('/api/devices/:id/actions/:action', async (req, res) => {
+  app.post('/api/devices/:id/actions/:action', async (req: express.Request, res: express.Response) => {
     try {
       const { id, action } = req.params;
       const result = await dispatchAction(`${id}=${action}`);
@@ -464,7 +464,47 @@ export const registerHttpUi = (app: express.Express) => {
     }
   });
 
-  app.get('/', (_req, res) => {
+  app.post('/api/system/reset', async (_req: express.Request, res: express.Response) => {
+    try {
+      console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+      console.log('[System] Manual reset EXECUTION started...');
+      console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+      
+      const logsDir = path.join(process.cwd(), 'logs');
+      const driversDir = path.join(logsDir, 'drivers');
+      
+      // 1. Clear Registry
+      const devicesFile = path.join(logsDir, 'devices.json');
+      await fs.promises.writeFile(devicesFile, '[]', 'utf-8');
+      
+      // 2. Clear Logs
+      const logFiles = ['events.jsonl', 'requests.jsonl', 'suggestions.jsonl'];
+      for (const file of logFiles) {
+        const filePath = path.join(logsDir, file);
+        if (fs.existsSync(filePath)) {
+          await fs.promises.writeFile(filePath, '', 'utf-8');
+        }
+      }
+      
+      // 3. Purge Drivers
+      if (fs.existsSync(driversDir)) {
+        const files = await fs.promises.readdir(driversDir);
+        for (const file of files) {
+          if (file.endsWith('.json')) {
+            await fs.promises.unlink(path.join(driversDir, file));
+          }
+        }
+      }
+
+      console.log('[System] Reset completed successfully.');
+      res.json({ success: true, message: 'System reset completed. All devices and drivers purged.' });
+    } catch (error) {
+      console.error('[System] Reset failed:', error);
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.get('/', (_req: express.Request, res: express.Response) => {
     res.sendFile(path.join(uiDir, 'index.html'));
   });
 

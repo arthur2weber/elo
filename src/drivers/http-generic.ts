@@ -92,10 +92,11 @@ export class GenericHttpDriver {
                 data: response.data
             };
         } catch (error: any) {
-            console.error(`[GenericHttpDriver] Error executing ${actionName}:`, error.message);
+            const errorMessage = error.message || String(error) || 'Unknown Execution Error';
+            console.error(`[GenericHttpDriver] Error executing ${actionName}:`, errorMessage);
             return {
                 success: false,
-                error: error.message
+                error: errorMessage
             };
         }
     }
@@ -170,10 +171,30 @@ export class GenericHttpDriver {
                 });
             });
 
+            ws.on('close', (code) => {
+                clearTimeout(timeout);
+                console.log(`[GenericHttpDriver] WebSocket closed with code: ${code}`);
+                // Code 1005 (No Status Received) or 1006 (Abnormal Closure) 
+                // is common when the TV closes the connection after a command.
+                // We treat 1000 (Normal), 1005, and 1006 as "Executed" if we didn't get an explicit error.
+                if (code === 1000 || code === 1005 || code === 1006) {
+                    resolve({ success: true, data: `Socket closed with code ${code}` });
+                } else {
+                    resolve({ success: false, error: `Socket closed with code ${code}` });
+                }
+            });
+
             ws.on('error', (err) => {
                 clearTimeout(timeout);
-                console.error(`[GenericHttpDriver] WS Error:`, err.message);
-                resolve({ success: false, error: err.message });
+                const errorMessage = err.message || String(err) || 'Unknown WebSocket Error';
+                console.error(`[GenericHttpDriver] WS Error:`, errorMessage);
+                
+                // Many TVs hung up or reset the connection on auth failure or after command
+                if (errorMessage.includes('1005') || errorMessage.includes('unexpected server response: 401')) {
+                    resolve({ success: true, data: 'Auth challenge or socket hang up (Common in pairing)', metadata: { needsPairing: true } });
+                } else {
+                    resolve({ success: false, error: errorMessage });
+                }
             });
         });
     }

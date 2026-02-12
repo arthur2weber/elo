@@ -181,7 +181,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
         extraHints.push(`Known pattern: Potential Home Assistant integration '${DISCOVERY_MAP[payload.type]}'`);
     }
     const signatureMatch = Object.entries(PROTOCOL_REFERENCES).find(([key, ref]) => 
-        payload.signature === key || (payload.port && ref.ports?.includes(payload.port))
+        payload.signature === key || (payload.port && (ref as any).ports?.includes(payload.port))
     );
     if (signatureMatch) {
         extraHints.push(`Protocol Reference: ${signatureMatch[0]} (See ${signatureMatch[1].repo}). Typical pattern: ${signatureMatch[1].patterns}`);

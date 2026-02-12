@@ -20,14 +20,18 @@ export const DEVICE_TEMPLATES: Record<string, DeviceTemplate> = {
         type: 'smart_tv',
         capabilities: ['media_control', 'volume', 'on_off'],
         actions: {
+            'status': {
+                method: 'GET',
+                url: 'http://<ip>:8001/api/v2/'
+            },
             'requestPairing': {
                 method: 'WS',
-                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVByb2plY3Q=&token={token}',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=',
                 body: ''
             },
-            'powerOff': {
+            'on': {
                 method: 'WS',
-                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVByb2plY3Q=&token={token}',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
                 body: JSON.stringify({
                     method: 'ms.remote.control',
                     params: {
@@ -38,9 +42,22 @@ export const DEVICE_TEMPLATES: Record<string, DeviceTemplate> = {
                     }
                 })
             },
-            'volumeUp': {
+            'off': {
                 method: 'WS',
-                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVByb2plY3Q=&token={token}',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
+                body: JSON.stringify({
+                    method: 'ms.remote.control',
+                    params: {
+                        Cmd: 'Click',
+                        DataOfCmd: 'KEY_POWER',
+                        Option: 'false',
+                        TypeOfRemote: 'SendRemoteKey'
+                    }
+                })
+            },
+            'volume_up': {
+                method: 'WS',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
                 body: JSON.stringify({
                     method: 'ms.remote.control',
                     params: {
@@ -51,9 +68,9 @@ export const DEVICE_TEMPLATES: Record<string, DeviceTemplate> = {
                     }
                 })
             },
-            'volumeDown': {
+            'volume_down': {
                 method: 'WS',
-                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVByb2plY3Q=&token={token}',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
                 body: JSON.stringify({
                     method: 'ms.remote.control',
                     params: {
@@ -66,7 +83,7 @@ export const DEVICE_TEMPLATES: Record<string, DeviceTemplate> = {
             },
             'mute': {
                 method: 'WS',
-                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLVByb2plY3Q=&token={token}',
+                url: 'wss://<ip>:8002/api/v2/channels/samsung.remote.control?name=RUxPLUNvbnNvbGU=&token={token}',
                 body: JSON.stringify({
                     method: 'ms.remote.control',
                     params: {
