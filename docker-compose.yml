@@ -15,6 +15,8 @@ services:
       - NET_ADMIN
       - NET_RAW
     entrypoint: ["npm", "start"]
+    depends_on:
+      - go2rtc
     environment:
       - GEMINI_CLI_BIN=${GEMINI_CLI_BIN:-gemini}
       - GEMINI_CLI_ARGS=${GEMINI_CLI_ARGS:-}
@@ -24,11 +26,22 @@ services:
       - GEMINI_API_BASE_URL=${GEMINI_API_BASE_URL:-}
       - THINKING_BUDGET=${THINKING_BUDGET:-}
       - CLOUDSDK_CONFIG=/gcloud
+      - GO2RTC_URL=http://127.0.0.1:1984
     volumes:
       - ./:/app
+      - /app/node_modules
       - gcloud_config:/gcloud
       - ./logs:/app/logs
       - ./automations:/app/automations
+
+  go2rtc:
+    image: alexxit/go2rtc
+    container_name: go2rtc
+    restart: unless-stopped
+    network_mode: host
+    privileged: true
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml
 
 volumes:
   gcloud_config:

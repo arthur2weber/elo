@@ -32,6 +32,18 @@ const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
 
 const getDb = () => new Database(getDbPath());
 
+const dbAll = async (db: any, query: string, params: any[] = []): Promise<any[]> => {
+  return db.prepare(query).all(...params);
+};
+
+const dbGet = async (db: any, query: string, params: any[] = []): Promise<any> => {
+  return db.prepare(query).get(...params);
+};
+
+const dbRun = async (db: any, query: string, params: any[] = []): Promise<any> => {
+  return db.prepare(query).run(...params);
+};
+
 const getBasePath = () => process.env.ELO_FILES_PATH || process.cwd();
 
 export const getLogsDir = () => path.join(getBasePath(), 'logs');
@@ -46,32 +58,30 @@ export const appendLogEntry = async (entry: LogEntry) => {
     const deviceId = entry.device;
 
     // Check if we already have an event for this device in this hour
-    const existing = db.prepare(`
+    const existing = await dbGet(db, `
       SELECT id, state FROM events 
       WHERE device_id = ? AND strftime('%H', timestamp) = ?
       ORDER BY timestamp DESC LIMIT 1
-    `).get(deviceId, new Date(timestamp).getHours().toString().padStart(2, '0')) as { id: number; state: string } | undefined;
+    `, [deviceId, new Date(timestamp).getHours().toString().padStart(2, '0')]) as { id: number; state: string } | undefined;
 
     if (existing) {
       // Update existing aggregated event with latest state
       const currentState = JSON.parse(existing.state);
       const newState = { ...currentState, ...entry.payload };
-      db.prepare(`
+      await dbRun(db, `
         UPDATE events SET 
           timestamp = ?, 
           event_type = ?, 
           state = ?
         WHERE id = ?
-      `).run(timestamp, entry.event, JSON.stringify(newState), existing.id);
+      `, [timestamp, entry.event, JSON.stringify(newState), existing.id]);
     } else {
       // Insert new aggregated event
-      db.prepare(`
+      await dbRun(db, `
         INSERT INTO events (device_id, timestamp, event_type, state, aggregated)
         VALUES (?, ?, ?, ?, 1)
-      `).run(deviceId, timestamp, entry.event, JSON.stringify(entry.payload || {}));
+      `, [deviceId, timestamp, entry.event, JSON.stringify(entry.payload || {})]);
     }
-
-    return { logPath: 'sqlite:events', entry };
   } finally {
     db.close();
   }
@@ -80,12 +90,12 @@ export const appendLogEntry = async (entry: LogEntry) => {
 export const readRecentLogs = async (limit = 50): Promise<LogEntry[]> => {
   const db = getDb();
   try {
-    const rows = db.prepare(`
-      SELECT timestamp, device_id as device, event_type as event, state as payload 
-      FROM events 
-      ORDER BY timestamp DESC 
+    const rows = await dbAll(db, `
+      SELECT timestamp, device_id as device, event_type as event, state as payload
+      FROM events
+      ORDER BY timestamp DESC
       LIMIT ?
-    `).all(limit);
+    `, [limit]);
 
     return rows.map((row: any) => ({
       timestamp: row.timestamp,
@@ -103,15 +113,14 @@ export const appendRequestLog = async (entry: RequestLogEntry) => {
   const db = getDb();
   try {
     const timestamp = entry.timestamp || new Date().toISOString();
-    const hour = new Date(timestamp).getHours();
     const user = entry.user || 'default';
 
     // For requests, we'll aggregate count per user/hour - but since schema doesn't support it,
     // we'll just insert individual requests for now (can optimize later)
-    db.prepare(`
+    await dbRun(db, `
       INSERT INTO requests (user, request, context, timestamp)
       VALUES (?, ?, ?, ?)
-    `).run(user, entry.request, entry.context, timestamp);
+    `, [user, entry.request, entry.context, timestamp]);
 
     return { logPath: 'sqlite:requests', entry };
   } finally {
@@ -122,12 +131,12 @@ export const appendRequestLog = async (entry: RequestLogEntry) => {
 export const readRecentRequests = async (limit = 50): Promise<RequestLogEntry[]> => {
   const db = getDb();
   try {
-    const rows = db.prepare(`
+    const rows = await dbAll(db, `
       SELECT timestamp, user, request, context 
       FROM requests 
       ORDER BY timestamp DESC 
       LIMIT ?
-    `).all(limit);
+    `, [limit]);
 
     return rows.map((row: any) => ({
       timestamp: row.timestamp,
@@ -150,42 +159,42 @@ export const appendAiUsageLog = async (entry: AiUsageLogEntry) => {
     const source = entry.source;
     const tags = Array.isArray(entry.tags) ? Array.from(new Set(entry.tags.map((tag) => String(tag).trim()).filter(Boolean))) : [];
 
-    const existing = db.prepare(`
+    const existing = await dbGet(db, `
       SELECT id, prompt_chars, response_chars, thinking_budget, tags 
       FROM ai_usage 
       WHERE source = ? AND strftime('%H', timestamp) = ?
       ORDER BY timestamp DESC LIMIT 1
-    `).get(source, hour.toString().padStart(2, '0')) as { id: number; prompt_chars: number; response_chars: number; thinking_budget: number; tags: string } | undefined;
+    `, [source, hour.toString().padStart(2, '0')]) as { id: number; prompt_chars: number; response_chars: number; thinking_budget: number; tags: string } | undefined;
 
     if (existing) {
       const existingTags = JSON.parse(existing.tags || '[]');
       const combinedTags = Array.from(new Set([...existingTags, ...tags]));
-      db.prepare(`
+      await dbRun(db, `
         UPDATE ai_usage SET 
           prompt_chars = ?, 
           response_chars = ?, 
           thinking_budget = ?, 
           tags = ?
         WHERE id = ?
-      `).run(
+      `, [
         existing.prompt_chars + (entry.promptChars || 0),
         existing.response_chars + (entry.responseChars || 0),
         (existing.thinking_budget || 0) + (entry.thinkingBudget || 0),
         JSON.stringify(combinedTags),
         existing.id
-      );
+      ]);
     } else {
-      db.prepare(`
+      await dbRun(db, `
         INSERT INTO ai_usage (timestamp, source, prompt_chars, response_chars, thinking_budget, tags)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(
+      `, [
         timestamp,
         source,
         entry.promptChars || 0,
         entry.responseChars || 0,
         entry.thinkingBudget || 0,
         JSON.stringify(tags)
-      );
+      ]);
     }
 
     return { logPath: 'sqlite:ai_usage', entry };
@@ -197,12 +206,12 @@ export const appendAiUsageLog = async (entry: AiUsageLogEntry) => {
 export const readRecentAiUsage = async (limit = 200): Promise<AiUsageLogEntry[]> => {
   const db = getDb();
   try {
-    const rows = db.prepare(`
+    const rows = await dbAll(db, `
       SELECT timestamp, source, prompt_chars, response_chars, thinking_budget, tags 
       FROM ai_usage 
       ORDER BY timestamp DESC 
       LIMIT ?
-    `).all(limit);
+    `, [limit]);
 
     return rows.map((row: any) => ({
       timestamp: row.timestamp,

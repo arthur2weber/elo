@@ -62,6 +62,43 @@ export const PROTOCOL_REFERENCES = {
     'scrypted': {
         repo: 'koush/scrypted',
         patterns: 'Especializado em drivers de alto desempenho para câmeras e vídeo.'
+    },
+    'onvif': {
+        repo: 'home-assistant/core/tree/dev/homeassistant/components/onvif',
+        ports: [5000, 8899, 80],
+        patterns: [
+            'ONVIF cameras expose SOAP services on a dedicated port (commonly 5000, 8899, or 80).',
+            'Service endpoints: /onvif/device_service, /onvif/media_service, /onvif/ptz_service.',
+            'PTZ uses ContinuousMove SOAP action. Stop is achieved by sending ContinuousMove with velocity (0,0).',
+            'Profile token is typically "IPCProfilesToken0" for cheap Chinese cameras (Yoosee, Wansview, etc).',
+            'Many budget cameras (Yoosee, CamHi, XMEye) have port 80 CLOSED - only RTSP:554 and ONVIF:5000 are open.',
+            'RTSP streams are usually at rtsp://{user}:{pass}@{ip}:554/onvif1 (main) or /onvif2 (sub).',
+            'Budget cameras often stream H265/HEVC which requires ffmpeg transcoding to H264 for browser playback.',
+            'ONVIF SOAP Content-Type header MUST be "application/soap+xml".',
+            'GetDeviceInformation on /onvif/device_service is the best connectivity check (getStatus).',
+            'Snapshot via ONVIF GetSnapshotUri is unreliable on cheap cameras - use go2rtc frame API instead.',
+            'ContinuousMove SOAP body: <ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>TOKEN</ProfileToken><Velocity><PanTilt x="X" y="Y" xmlns="http://www.onvif.org/ver10/schema"/></Velocity></ContinuousMove>',
+            'Always include a ptzStop action that sends ContinuousMove with x="0" y="0" to halt movement.'
+        ].join('\n'),
+        url_template: 'http://{ip}:5000/onvif/device_service'
+    },
+    'yoosee': {
+        repo: 'home-assistant/core/tree/dev/homeassistant/components/onvif',
+        ports: [554, 5000],
+        patterns: [
+            'Yoosee/CamHi/CloudEdge cameras are budget Chinese IP cameras with ONVIF support.',
+            'CRITICAL: Port 80 is usually CLOSED on these cameras. Do NOT use HTTP CGI for PTZ.',
+            'Open ports: RTSP(554), ONVIF(5000). Some also have FTP(21) and Telnet(23).',
+            'RTSP URL: rtsp://{username}:{password}@{ip}:554/onvif1 (main stream, H264 or H265)',
+            'ONVIF PTZ: POST to http://{ip}:5000/onvif/ptz_service with SOAP ContinuousMove.',
+            'ONVIF Status: POST to http://{ip}:5000/onvif/device_service with GetDeviceInformation.',
+            'Profile token: "IPCProfilesToken0".',
+            'Default credentials: admin/(device-specific password).',
+            'The Stop command is NOT supported - use ContinuousMove with velocity (0,0) instead.',
+            'H265 cameras need ffmpeg transcoding for browser playback via go2rtc.',
+            'Snapshot: use go2rtc frame.jpeg API, NOT the camera HTTP endpoint.'
+        ].join('\n'),
+        url_template: 'rtsp://{username}:{password}@{ip}:554/onvif1'
     }
 };
 
@@ -95,5 +132,7 @@ export const DISCOVERY_MAP: Record<string, string> = {
     '_ipp._tcp': 'ipp_printer',
     'urn:schemas-upnp-org:device:MediaRenderer:1': 'dlna_dmr',
     'urn:dial-multiscreen-org:service:dial:1': 'samsungtv',
-    'urn:schemas-wiz-com:device:WizDevice:1': 'wiz'
+    'urn:schemas-wiz-com:device:WizDevice:1': 'wiz',
+    '_onvif._tcp': 'onvif',
+    'urn:schemas-xmlsoap-org:service:onvif': 'onvif'
 };

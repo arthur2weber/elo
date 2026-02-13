@@ -182,6 +182,54 @@ window.triggerDeviceAction = async (deviceId, action, params = {}) => {
   }
 };
 
+/**
+ * Timed PTZ move: starts movement, waits durationMs, then sends ptzStop.
+ * Useful for automations that need precise movement amounts.
+ */
+window.timedPtzMove = async (deviceId, direction, durationMs = 500) => {
+  try {
+    setStatus(`PTZ ${direction} (${durationMs}ms)...`);
+    await fetchJson(`/api/devices/${deviceId}/actions/${direction}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    await new Promise(r => setTimeout(r, durationMs));
+    await fetchJson(`/api/devices/${deviceId}/actions/ptzStop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    setStatus('PTZ concluído');
+  } catch (e) { /* ignore */ }
+};
+
+/**
+ * PTZ hold-to-move: starts movement on press, stops on release.
+ * Attach to mousedown/touchstart (start) and mouseup/touchend/mouseleave (stop).
+ */
+window.ptzStart = async (deviceId, direction) => {
+  try {
+    setStatus(`PTZ ${direction}...`);
+    await fetchJson(`/api/devices/${deviceId}/actions/${direction}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+  } catch (e) { /* ignore */ }
+};
+
+window.ptzStop = async (deviceId) => {
+  try {
+    await fetchJson(`/api/devices/${deviceId}/actions/ptzStop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    setStatus('PTZ parado');
+  } catch (e) { /* ignore */ }
+};
+
 window.openDeviceModal = (id) => {
   const device = allDevices[id];
   if (!device) return;
@@ -196,6 +244,10 @@ window.openDeviceModal = (id) => {
   document.getElementById('edit-device-endpoint').value = device.endpoint || '';
   document.getElementById('edit-device-protocol').value = device.protocol || '';
   document.getElementById('edit-device-status').value = device.integrationStatus || 'unknown';
+  document.getElementById('edit-device-brand').value = device.brand || '';
+  document.getElementById('edit-device-model').value = device.model || '';
+  document.getElementById('edit-device-username').value = device.username || '';
+  document.getElementById('edit-device-password').value = device.password || '';
 
   const notes = device.notes ? JSON.stringify(device.notes, null, 2) : (device.customNotes || '');
   document.getElementById('edit-device-notes').value = notes;
@@ -207,9 +259,9 @@ window.openDeviceModal = (id) => {
   // Set Hint
   if (isTV) {
     hintEl.textContent = 'Dica ELO: Para TVs, informe se há algum PIN ou se a porta 8001 está aberta.';
-  } else if (type === 'Camera') {
+  } else if (type.toLowerCase() === 'camera') {
     hintEl.textContent = 'Dica ELO: Informe o usuário/senha (ex: admin/admin) para eu tentar capturar o stream.';
-  } else if (type === 'Air Conditioner') {
+  } else if (type.toLowerCase() === 'air conditioner') {
     hintEl.textContent = 'Dica ELO: Informe se é um modelo específico (ex: LG Thinq, Samsung Windfree).';
   } else {
     hintEl.textContent = '';
@@ -266,20 +318,29 @@ window.openDeviceModal = (id) => {
         </div>
       </div>
     `;
-  } else if (type === 'Camera') {
+  } else if (type.toLowerCase() === 'camera') {
     deviceControlsContainer.innerHTML = `
       <div class="camera-preview">
-        <div class="muted">Aguardando snapshot...</div>
-        <!-- Em um cenário real, o ELO poderia servir o snapshot via proxy -->
+        <h4>Preview da Câmera</h4>
+        <div id="camera-stream-${id}" class="camera-stream">
+          <div class="muted">Carregando stream...</div>
+        </div>
+        <div class="camera-controls">
+          <button class="btn-small" onclick="loadCameraStream('${id}')">Recarregar Stream</button>
+          <button class="btn-small" onclick="getCameraSnapshot('${id}')">Capturar Foto</button>
+        </div>
       </div>
       <div class="remote-control" style="grid-template-columns: repeat(3, 1fr);">
-        <div></div><button class="remote-btn" onclick="triggerDeviceAction('${id}', 'moveUp')">▲</button><div></div>
-        <button class="remote-btn" onclick="triggerDeviceAction('${id}', 'moveLeft')">◀</button>
+        <div></div><button class="remote-btn" onmousedown="ptzStart('${id}', 'moveUp')" onmouseup="ptzStop('${id}')" onmouseleave="ptzStop('${id}')" ontouchstart="ptzStart('${id}', 'moveUp')" ontouchend="ptzStop('${id}')">▲</button><div></div>
+        <button class="remote-btn" onmousedown="ptzStart('${id}', 'moveLeft')" onmouseup="ptzStop('${id}')" onmouseleave="ptzStop('${id}')" ontouchstart="ptzStart('${id}', 'moveLeft')" ontouchend="ptzStop('${id}')">◀</button>
         <button class="remote-btn" onclick="triggerDeviceAction('${id}', 'getStatus')">↻</button>
-        <button class="remote-btn" onclick="triggerDeviceAction('${id}', 'moveRight')">▶</button>
-        <div></div><button class="remote-btn" onclick="triggerDeviceAction('${id}', 'moveDown')">▼</button><div></div>
+        <button class="remote-btn" onmousedown="ptzStart('${id}', 'moveRight')" onmouseup="ptzStop('${id}')" onmouseleave="ptzStop('${id}')" ontouchstart="ptzStart('${id}', 'moveRight')" ontouchend="ptzStop('${id}')">▶</button>
+        <div></div><button class="remote-btn" onmousedown="ptzStart('${id}', 'moveDown')" onmouseup="ptzStop('${id}')" onmouseleave="ptzStop('${id}')" ontouchstart="ptzStart('${id}', 'moveDown')" ontouchend="ptzStop('${id}')">▼</button><div></div>
       </div>
     `;
+    
+    // Auto-load camera stream when modal opens
+    loadCameraStream(id);
   } else if (type === 'Air Conditioner') {
     deviceControlsContainer.innerHTML = `
       <div class="ac-control">
@@ -323,8 +384,13 @@ window.openDeviceModal = (id) => {
     };
   });
 
-  // Reset to first tab
-  modalTabs[0].click();
+  // Reset to first tab, or Controls tab for cameras
+  if (type === 'Camera') {
+    const controlsTab = document.querySelector('.modal-tab[data-tab="controls"]');
+    if (controlsTab) controlsTab.click();
+  } else {
+    modalTabs[0].click();
+  }
   deviceModal.classList.add('active');
 };
 
@@ -397,7 +463,11 @@ deviceEditForm.addEventListener('submit', async (e) => {
     ip: document.getElementById('edit-device-ip').value,
     endpoint: document.getElementById('edit-device-endpoint').value,
     protocol: document.getElementById('edit-device-protocol').value,
-    integrationStatus: document.getElementById('edit-device-status').value
+    integrationStatus: document.getElementById('edit-device-status').value,
+    brand: document.getElementById('edit-device-brand').value,
+    model: document.getElementById('edit-device-model').value,
+    username: document.getElementById('edit-device-username').value,
+    password: document.getElementById('edit-device-password').value
   };
 
   const notesStr = document.getElementById('edit-device-notes').value;
@@ -415,13 +485,31 @@ deviceEditForm.addEventListener('submit', async (e) => {
   }
 
   try {
-    await fetchJson(`/api/devices/${id}`, {
+    const response = await fetch(`/api/devices/${id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
     });
-    closeDeviceModal();
-    loadDevices();
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      // Show success message with validation status
+      if (updates.type === 'camera' || updates.type === 'Camera') {
+        alert('✅ Dispositivo salvo com sucesso! Credenciais validadas.');
+      } else {
+        alert('✅ Dispositivo salvo com sucesso!');
+      }
+      closeDeviceModal();
+      loadDevices();
+    } else {
+      // Show validation error
+      if (result.validationError) {
+        alert(`❌ ${result.error}`);
+      } else {
+        alert(`Erro: ${result.error}`);
+      }
+    }
   } catch (error) {
     alert(error.message);
   }
@@ -582,5 +670,385 @@ window.triggerDevicePairing = async (id) => {
   } finally {
     btn.textContent = originalText;
     btn.disabled = false;
+  }
+};
+
+window.loadCameraStream = async (deviceId) => {
+  const streamContainer = document.getElementById(`camera-stream-${deviceId}`);
+  if (!streamContainer) {
+    console.log(`[UI] Stream container not found for ${deviceId}`);
+    return;
+  }
+  
+  console.log(`[UI] Loading camera stream for ${deviceId}`);
+  streamContainer.innerHTML = '<div class="muted">Carregando stream...</div>';
+  
+  try {
+    console.log(`[UI] Fetching stream URL for ${deviceId}`);
+    const response = await fetch(`/api/devices/${deviceId}/stream`);
+    const result = await response.json();
+    console.log(`[UI] Stream API response:`, result);
+    
+    if (result.success && result.data) {
+      const { go2rtc: g2r, streamUrl } = result.data;
+      
+      if (g2r && g2r.available) {
+        // ── go2rtc available: embed the stream player ──
+        streamContainer.innerHTML = `
+          <div class="go2rtc-player">
+            <div class="stream-modes" style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+              <button class="btn-small stream-mode-btn" onclick="switchStreamMode('${deviceId}', 'webrtc', this)">WebRTC</button>
+              <button class="btn-small stream-mode-btn" onclick="switchStreamMode('${deviceId}', 'mse', this)">MSE</button>
+              <button class="btn-small stream-mode-btn active" onclick="switchStreamMode('${deviceId}', 'iframe', this)">Player go2rtc</button>
+              <button class="btn-small stream-mode-btn" onclick="loadCameraFrame('${deviceId}')">📷 Snapshot</button>
+            </div>
+            <div id="stream-player-${deviceId}" class="stream-player-container">
+              <iframe src="${g2r.viewerUrl}" 
+                style="width: 100%; height: 400px; border: none; border-radius: 6px; background: #000;"
+                allow="autoplay; fullscreen">
+              </iframe>
+            </div>
+            <div class="muted" style="margin-top: 6px; font-size: 11px; display: flex; justify-content: space-between; align-items: center;">
+              <span>🟢 go2rtc · <span id="stream-mode-label-${deviceId}">Player go2rtc</span></span>
+              <button class="btn-small" onclick="copyToClipboard('${streamUrl}')" style="font-size: 10px; padding: 2px 8px;">📋 RTSP URL</button>
+            </div>
+          </div>
+        `;
+        
+      } else if (streamUrl) {
+        // ── go2rtc not available: fallback ──
+        if (streamUrl.startsWith('http://') || streamUrl.startsWith('https://')) {
+          streamContainer.innerHTML = `
+            <video controls autoplay muted style="width: 100%; max-height: 300px; border-radius: 8px;" preload="none">
+              <source src="${streamUrl}" type="video/mp4">
+              Seu navegador não suporta reprodução de vídeo.
+            </video>
+          `;
+        } else {
+          streamContainer.innerHTML = `
+            <div class="rtsp-fallback">
+              <div class="muted" style="margin-bottom: 8px;">⚠️ go2rtc não disponível</div>
+              <code style="word-break: break-all; font-size: 12px; background: var(--bg-secondary); padding: 8px; border-radius: 4px; display: block; margin-bottom: 8px;">${streamUrl}</code>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn-small" onclick="copyToClipboard('${streamUrl}')">📋 Copiar URL</button>
+              </div>
+              <div class="muted" style="font-size: 11px; margin-top: 8px;">
+                Inicie o container go2rtc para visualizar o stream direto no navegador.
+              </div>
+            </div>
+          `;
+        }
+      } else {
+        streamContainer.innerHTML = '<div class="muted">Stream não disponível</div>';
+      }
+    } else {
+      streamContainer.innerHTML = '<div class="muted">Stream não disponível</div>';
+    }
+  } catch (error) {
+    streamContainer.innerHTML = `<div class="muted" style="color: #ef4444">Erro: ${error.message}</div>`;
+  }
+};
+
+// ── WebRTC streaming via go2rtc ──────────────────────────────
+
+window.startWebRTCStream = async (deviceId, webrtcUrl, streamNameParam) => {
+  const video = document.getElementById(`stream-video-${deviceId}`);
+  if (!video) return;
+
+  // Clean up previous connection
+  if (video._pc) {
+    video._pc.close();
+    video._pc = null;
+  }
+
+  try {
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    video._pc = pc;
+
+    pc.ontrack = (event) => {
+      if (video.srcObject !== event.streams[0]) {
+        video.srcObject = event.streams[0];
+        console.log(`[WebRTC] Received track for ${deviceId}`);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[WebRTC] ICE state for ${deviceId}: ${pc.iceConnectionState}`);
+      const label = document.getElementById(`stream-mode-label-${deviceId}`);
+      if (pc.iceConnectionState === 'connected') {
+        if (label) label.textContent = 'WebRTC · Conectado';
+      } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+        if (label) label.textContent = 'WebRTC · Desconectado';
+      }
+    };
+
+    // Add transceivers for receiving video and audio
+    pc.addTransceiver('video', { direction: 'recvonly' });
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    // Wait for ICE gathering
+    await new Promise((resolve) => {
+      if (pc.iceGatheringState === 'complete') {
+        resolve();
+      } else {
+        pc.onicegatheringstatechange = () => {
+          if (pc.iceGatheringState === 'complete') resolve();
+        };
+        // Timeout after 3 seconds
+        setTimeout(resolve, 3000);
+      }
+    });
+
+    // Send SDP offer to go2rtc via HTTP POST (through proxy)
+    const resp = await fetch(webrtcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' },
+      body: pc.localDescription.sdp
+    });
+
+    if (resp.ok) {
+      const answerSdp = await resp.text();
+      await pc.setRemoteDescription(new RTCSessionDescription({
+        type: 'answer',
+        sdp: answerSdp
+      }));
+      console.log(`[WebRTC] Connected for ${deviceId}`);
+    } else {
+      throw new Error(`WebRTC signaling failed: ${resp.status}`);
+    }
+  } catch (error) {
+    console.error(`[WebRTC] Error for ${deviceId}:`, error);
+    // Fallback to MSE
+    const label = document.getElementById(`stream-mode-label-${deviceId}`);
+    if (label) label.textContent = 'Tentando MSE...';
+    
+    // Get MSE URL from stream API
+    try {
+      const response = await fetch(`/api/devices/${deviceId}/stream`);
+      const result = await response.json();
+      if (result.success && result.data.go2rtc) {
+        startMSEStream(deviceId, result.data.go2rtc.mseUrl);
+      }
+    } catch (e) {
+      console.error('[WebRTC] MSE fallback also failed:', e);
+    }
+  }
+};
+
+// ── MSE streaming (fallback) ─────────────────────────────────
+
+window.startMSEStream = async (deviceId, mseUrl) => {
+  const video = document.getElementById(`stream-video-${deviceId}`);
+  if (!video) return;
+
+  // Clean up previous connection
+  if (video._pc) {
+    video._pc.close();
+    video._pc = null;
+  }
+  video.srcObject = null;
+
+  try {
+    if (!MediaSource.isTypeSupported('video/mp4; codecs="avc1.640029"')) {
+      throw new Error('MSE not supported');
+    }
+
+    const ms = new MediaSource();
+    video.src = URL.createObjectURL(ms);
+
+    ms.addEventListener('sourceopen', async () => {
+      const sb = ms.addSourceBuffer('video/mp4; codecs="avc1.640029"');
+      
+      const resp = await fetch(mseUrl);
+      const reader = resp.body.getReader();
+
+      const pump = async () => {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (ms.readyState === 'open') ms.endOfStream();
+          return;
+        }
+
+        // Wait for buffer to be ready
+        if (sb.updating) {
+          await new Promise(resolve => sb.addEventListener('updateend', resolve, { once: true }));
+        }
+        
+        sb.appendBuffer(value);
+        await new Promise(resolve => sb.addEventListener('updateend', resolve, { once: true }));
+        pump();
+      };
+
+      pump();
+    });
+
+    const label = document.getElementById(`stream-mode-label-${deviceId}`);
+    if (label) label.textContent = 'MSE';
+  } catch (error) {
+    console.error(`[MSE] Error for ${deviceId}:`, error);
+    const label = document.getElementById(`stream-mode-label-${deviceId}`);
+    if (label) label.textContent = 'Erro MSE';
+  }
+};
+
+// ── Switch stream mode ───────────────────────────────────────
+
+window.switchStreamMode = async (deviceId, mode, btn) => {
+  // Update active button
+  const btns = btn?.parentElement?.querySelectorAll('.stream-mode-btn');
+  btns?.forEach(b => b.classList.remove('active'));
+  btn?.classList.add('active');
+
+  const playerContainer = document.getElementById(`stream-player-${deviceId}`);
+  const video = document.getElementById(`stream-video-${deviceId}`);
+  const label = document.getElementById(`stream-mode-label-${deviceId}`);
+
+  // Get stream info
+  const response = await fetch(`/api/devices/${deviceId}/stream`);
+  const result = await response.json();
+  if (!result.success || !result.data.go2rtc) return;
+
+  const g2r = result.data.go2rtc;
+
+  if (mode === 'webrtc') {
+    // Reset to video element
+    if (playerContainer && !video) {
+      playerContainer.innerHTML = `
+        <video id="stream-video-${deviceId}" autoplay muted playsinline 
+          style="width: 100%; max-height: 400px; background: #000; border-radius: 6px;">
+        </video>
+      `;
+    }
+    if (label) label.textContent = 'WebRTC · Conectando...';
+    startWebRTCStream(deviceId, g2r.webrtcUrl, g2r.streamName);
+  } else if (mode === 'mse') {
+    if (playerContainer && !video) {
+      playerContainer.innerHTML = `
+        <video id="stream-video-${deviceId}" autoplay muted playsinline 
+          style="width: 100%; max-height: 400px; background: #000; border-radius: 6px;">
+        </video>
+      `;
+    }
+    if (label) label.textContent = 'MSE · Conectando...';
+    startMSEStream(deviceId, g2r.mseUrl);
+  } else if (mode === 'iframe') {
+    // Clean up video
+    if (video && video._pc) {
+      video._pc.close();
+    }
+    if (playerContainer) {
+      playerContainer.innerHTML = `
+        <iframe src="${g2r.viewerUrl}" 
+          style="width: 100%; height: 400px; border: none; border-radius: 6px; background: #000;"
+          allow="autoplay; fullscreen">
+        </iframe>
+      `;
+    }
+    if (label) label.textContent = 'Player go2rtc';
+  }
+};
+
+// ── Camera snapshot via go2rtc ────────────────────────────────
+
+window.loadCameraFrame = async (deviceId) => {
+  const playerContainer = document.getElementById(`stream-player-${deviceId}`);
+  if (!playerContainer) return;
+
+  const video = document.getElementById(`stream-video-${deviceId}`);
+  if (video && video._pc) {
+    video._pc.close();
+  }
+
+  playerContainer.innerHTML = '<div class="muted">Capturando frame...</div>';
+
+  try {
+    const timestamp = Date.now();
+    const img = new Image();
+    img.style.width = '100%';
+    img.style.maxHeight = '400px';
+    img.style.borderRadius = '6px';
+    img.style.objectFit = 'contain';
+    img.style.background = '#000';
+    
+    img.onload = () => {
+      playerContainer.innerHTML = '';
+      playerContainer.appendChild(img);
+      const label = document.getElementById(`stream-mode-label-${deviceId}`);
+      if (label) label.textContent = 'Snapshot';
+    };
+    
+    img.onerror = () => {
+      playerContainer.innerHTML = '<div class="muted" style="color: #ef4444">Erro ao capturar frame</div>';
+    };
+    
+    img.src = `/api/devices/${deviceId}/frame?t=${timestamp}`;
+  } catch (error) {
+    playerContainer.innerHTML = `<div class="muted" style="color: #ef4444">Erro: ${error.message}</div>`;
+  }
+};
+
+window.getCameraSnapshot = async (deviceId) => {
+  const streamContainer = document.getElementById(`camera-stream-${deviceId}`);
+  if (!streamContainer) return;
+  
+  try {
+    streamContainer.innerHTML = '<div class="muted">Capturando snapshot...</div>';
+    
+    const img = document.createElement('img');
+    img.style.width = '100%';
+    img.style.maxHeight = '300px';
+    img.style.borderRadius = '8px';
+    img.style.objectFit = 'contain';
+    img.style.background = '#000';
+    img.style.display = 'none';
+    
+    img.onload = () => {
+      streamContainer.innerHTML = '';
+      streamContainer.appendChild(img);
+      img.style.display = 'block';
+    };
+    
+    img.onerror = () => {
+      // Fallback to old snapshot endpoint
+      img.onerror = () => {
+        streamContainer.innerHTML = '<div class="muted" style="color: #ef4444">Erro ao carregar snapshot</div>';
+      };
+      img.src = `/api/devices/${deviceId}/snapshot?t=${Date.now()}`;
+    };
+    
+    // Try go2rtc frame first
+    const timestamp = Date.now();
+    img.src = `/api/devices/${deviceId}/frame?t=${timestamp}`;
+    
+    setTimeout(() => {
+      if (img.style.display === 'none') {
+        streamContainer.innerHTML = '<div class="muted">Timeout ao carregar snapshot</div>';
+      }
+    }, 10000);
+    
+  } catch (error) {
+    streamContainer.innerHTML = `<div class="muted" style="color: #ef4444">Erro: ${error.message}</div>`;
+  }
+};
+
+window.copyToClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert('URL copiada para a área de transferência!');
+  } catch (error) {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    alert('URL copiada para a área de transferência!');
   }
 };

@@ -4,7 +4,7 @@ import path from 'path';
 
 const DB_PATH = path.join(process.cwd(), 'data', 'elo.db');
 
-function initDatabase() {
+async function initDatabase() {
   // Ensure data directory exists
   const dataDir = path.dirname(DB_PATH);
   if (!fs.existsSync(dataDir)) {
@@ -13,8 +13,14 @@ function initDatabase() {
 
   const db = new Database(DB_PATH);
 
+  // Check if we're using better-sqlite3 (synchronous) or sqlite3 (asynchronous)
+
+  const dbExec = async (query: string) => {
+    db.exec(query);
+  };
+
   // Create tables
-  db.exec(`
+  await dbExec(`
     CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -26,6 +32,10 @@ function initDatabase() {
       secrets TEXT, -- JSON string
       config TEXT, -- JSON string
       notes TEXT,
+      brand TEXT,
+      model TEXT,
+      username TEXT,
+      password TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -45,6 +55,20 @@ function initDatabase() {
       request TEXT,
       context TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp DATETIME NOT NULL,
+      user TEXT,
+      context TEXT,
+      action_key TEXT,
+      suggestion TEXT,
+      accepted BOOLEAN DEFAULT 0,
+      status TEXT,
+      details TEXT, -- JSON string
+      request_id INTEGER,
+      FOREIGN KEY(request_id) REFERENCES requests(id)
     );
 
     CREATE TABLE IF NOT EXISTS suggestions (
@@ -77,16 +101,20 @@ function initDatabase() {
   `);
 
   // Create indexes
-  db.exec(`
+  await dbExec(`
     CREATE INDEX IF NOT EXISTS idx_events_device_timestamp ON events(device_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_requests_timestamp ON requests(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_decisions_request_id ON decisions(request_id);
     CREATE INDEX IF NOT EXISTS idx_suggestions_status ON suggestions(status);
     CREATE INDEX IF NOT EXISTS idx_ai_usage_timestamp ON ai_usage(timestamp);
     CREATE INDEX IF NOT EXISTS idx_drivers_device_id ON drivers(device_id);
   `);
 
-  console.log('Database initialized at', DB_PATH);
+  console.log('Database initialized successfully at:', DB_PATH);
   db.close();
 }
 
-initDatabase();
+initDatabase().catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
+});

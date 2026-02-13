@@ -43,14 +43,23 @@ export const dispatchAction = async (actionString: string) => {
     let params: Record<string, any> = {};
     const devices = await readDevices();
     const deviceData = devices.find((d: Device) => d.id === device);
+
+    if (!deviceData) {
+        console.warn(`[ActionDispatcher] Device '${device}' not found in registry (readDevices returned ${devices.length} items).`);
+    }
     
     if (deviceData) {
         // Priority: secrets > config > notes
         params = { 
             ...(deviceData.config || {}), 
             ...(deviceData.secrets || {}),
+            brand: deviceData.brand,
+            model: deviceData.model,
+            username: deviceData.username,
+            password: deviceData.password,
             ip: deviceData.ip
         };
+        console.log(`[ActionDispatcher] Loaded params for ${device}: IP=${params.ip}, User=${params.username}`);
         
         if (deviceData.notes) {
             if (typeof deviceData.notes === 'object') {

@@ -146,6 +146,7 @@ export const prompts = {
         previousAttemptError?: string;
         userNotes?: string;
         identificationHint?: string;
+        deviceType?: string;
     }) => {
         const typeSpecificRules: Record<string, string[]> = {
             'TV': [
@@ -161,9 +162,37 @@ export const prompts = {
                 '  - For Volume/Mute, you can also consider UPnP port 9197 RenderingControl as a secondary fallback.'
             ],
             'Camera': [
-                'Look for PTZ (Pan/Tilt/Zoom) controls: moveUp, moveDown, moveLeft, moveRight.',
-                'Include a "getStatus" action to check availability.',
-                'If you suspect authentication is needed (401/403 errors or common camera patterns), add an "authRequired: true" field in actions notes.'
+                'Include PTZ (Pan/Tilt/Zoom) controls: moveUp, moveDown, moveLeft, moveRight.',
+                'CRITICAL: Always include a "ptzStop" action that halts camera movement. For ONVIF cameras, ptzStop sends ContinuousMove with velocity (0,0).',
+                'Include "getStream" action for RTSP stream URL: rtsp://{username}:{password}@{ip}:554/onvif1 (most common for ONVIF cameras).',
+                'Include "getSnapshot" action: prefer using go2rtc frame API at http://localhost:1984/api/frame.jpeg?src={device_id} instead of camera HTTP endpoints.',
+                'Include "getStatus" action to check camera availability.',
+                'CRITICAL: For authenticated RTSP URLs, use placeholders {username} and {password}: rtsp://{username}:{password}@{ip}:554/onvif1',
+                '',
+                '=== ONVIF CAMERAS (most common for budget/Chinese cameras like Yoosee, CamHi, Wansview, XMEye) ===',
+                'CRITICAL: Many budget cameras have port 80 CLOSED. Do NOT rely on HTTP CGI endpoints on port 80.',
+                'ONVIF cameras typically expose SOAP services on port 5000 (or sometimes 8899).',
+                'ONVIF endpoints: /onvif/device_service, /onvif/media_service, /onvif/ptz_service.',
+                'For getStatus: POST to http://{ip}:5000/onvif/device_service with Content-Type: application/soap+xml and body:',
+                '  <?xml version="1.0"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Body><GetDeviceInformation xmlns="http://www.onvif.org/ver10/device/wsdl"/></s:Body></s:Envelope>',
+                'For PTZ (moveUp/Down/Left/Right): POST to http://{ip}:5000/onvif/ptz_service with SOAP ContinuousMove:',
+                '  Body: <?xml version="1.0"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Body><ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl"><ProfileToken>IPCProfilesToken0</ProfileToken><Velocity><PanTilt x="X" y="Y" xmlns="http://www.onvif.org/ver10/schema"/></Velocity></ContinuousMove></s:Body></s:Envelope>',
+                '  Velocities: moveUp(x=0,y=0.5), moveDown(x=0,y=-0.5), moveLeft(x=-0.5,y=0), moveRight(x=0.5,y=0), ptzStop(x=0,y=0)',
+                '  Headers: { "Content-Type": "application/soap+xml" }',
+                '  Profile token "IPCProfilesToken0" is the standard for most budget cameras.',
+                'IMPORTANT: The ONVIF Stop command is unreliable on many cameras. Instead, use ContinuousMove with velocity (0,0) for ptzStop.',
+                '',
+                '=== RTSP STREAMING NOTES ===',
+                'Budget cameras often stream H265/HEVC which Chrome/Firefox cannot play via WebRTC.',
+                'The go2rtc service handles H265->H264 transcoding automatically.',
+                'For Yoosee cameras: ALWAYS use rtsp://{username}:{password}@{ip}:554/onvif1 and port 554.',
+                '',
+                '=== BRAND-SPECIFIC PATTERNS ===',
+                'Yoosee/CamHi/CloudEdge: RTSP:554, ONVIF:5000, port 80 CLOSED. Use ONVIF template.',
+                'Hikvision: RTSP:554 (/Streaming/Channels/101), HTTP:80 (ISAPI), ONVIF:80.',
+                'Reolink: RTSP:554 (/h264Preview_01_main), HTTP:80 (CGI API).',
+                'Amcrest: RTSP:554 (/cam/realmonitor), HTTP:80 (CGI).',
+                'TP-Link: RTSP:554 (/stream1), HTTP:80.',
             ],
             'Air Conditioner': [
                 'Include setTemperature, setMode (cool, heat, auto), setFanSpeed.',
@@ -200,9 +229,23 @@ export const prompts = {
             }
         };
 
-        const ruleStrings = Object.entries(typeSpecificRules)
-            .map(([type, rules]) => `- IF DEVICE TYPE IS OR LIKELY IS ${type.toUpperCase()}:\n  ${rules.map(r => `  * ${r}`).join('\n')}`)
-            .join('\n');
+        // Prioritize deviceType if provided
+        let relevantRules: string[] = [];
+        if (input.deviceType) {
+            const normalizedType = input.deviceType.toLowerCase();
+            for (const [type, rules] of Object.entries(typeSpecificRules)) {
+                if (normalizedType.includes(type.toLowerCase()) || type.toLowerCase().includes(normalizedType)) {
+                    relevantRules = rules;
+                    break;
+                }
+            }
+        }
+        
+        const ruleStrings = relevantRules.length > 0 
+            ? relevantRules.map(r => `  * ${r}`).join('\n')
+            : Object.entries(typeSpecificRules)
+                .map(([type, rules]) => `- IF DEVICE TYPE IS OR LIKELY IS ${type.toUpperCase()}:\n  ${rules.map(r => `  * ${r}`).join('\n')}`)
+                .join('\n');
 
         return [
             'You are a smart home connectivity assistant.',
@@ -220,7 +263,10 @@ export const prompts = {
             'ALLOWED METHODS: "GET", "POST", "PUT", "DELETE", "WS" (WebSocket).',
             'SAMSUNG TIZEN EXAMPLE (FOLLOW THIS EXACT PATTERN):',
             JSON.stringify(samsungExample, null, 2),
-            'CRITICAL: When writing JSON payloads in "body", DO NOT use generic placeholders like "{value}" or "{cmd}". ONLY use allowed placeholders: "{ip}", "{token}", "{mac}". All other curly braces MUST be preserved as valid JSON.',
+            'CRITICAL: When writing JSON payloads in "body", DO NOT use generic placeholders like "{value}" or "{cmd}". ONLY use allowed placeholders: "{ip}", "{username}", "{password}", "{token}", "{mac}". All other curly braces MUST be preserved as valid JSON.',
+            'CRITICAL: For authenticated URLs, ALWAYS use {username} and {password} placeholders instead of hardcoded credentials.',
+            'Example authenticated RTSP URL: "rtsp://{username}:{password}@{ip}:{port}/stream"',
+            'Example authenticated HTTP URL: "http://{username}:{password}@{ip}:{port}/cgi-bin/snapshot.cgi"',
             'Return JSON only: { "deviceName": string, "deviceType": string, "capabilities": string[], "actions": Record<string, { method: "GET"|"POST"|"PUT"|"WS", url: string, headers?: Record<string, string>, body?: string, notes?: string }> }.',
             'CAPABILITIES: Map the device to standard categories like "on_off", "brightness", "media_control", "volume", "temperature_sensor", etc.',
             'COMMAND NORMALIZATION (CRITICAL): Use these exact keys for typical actions:',

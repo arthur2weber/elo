@@ -42,7 +42,13 @@ const isIpAlreadyRegistered = async (ip: string): Promise<boolean> => {
   try {
     const devices = await readDevices();
     const normalizedIp = ip.trim();
-    return devices.some((device) => device.ip?.trim() === normalizedIp);
+    const isRegistered = devices.some((device) => device.ip?.trim() === normalizedIp);
+    
+    if (isRegistered) {
+      discoveryMetrics.duplicatePreventionHits++;
+    }
+    
+    return isRegistered;
   } catch (error) {
     console.warn('[ELO] Failed to check registered devices:', error);
     return false;
@@ -52,11 +58,55 @@ const isIpAlreadyRegistered = async (ip: string): Promise<boolean> => {
 const DEFAULT_SCAN_PORTS = [4387, 554, 8899, 8001, 8002, 1515];
 const DEFAULT_SCAN_TIMEOUT_MS = 250;
 const DEFAULT_SCAN_CONCURRENCY = 64;
-const DEFAULT_SCAN_INTERVAL_MS = 60000; // 1 minuto 
-const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 90000; // 1 minuto e meio 
-const DEFAULT_SSDP_INTERVAL_MS = 75000; // 1 minuto e 15 segundos 
+const DEFAULT_SCAN_INTERVAL_MS = 30000; // 30 segundos (reduzido de 60s)
+const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 45000; // 45 segundos (reduzido de 90s)
+const DEFAULT_SSDP_INTERVAL_MS = 40000; // 40 segundos (reduzido de 75s)
 const DEFAULT_FINGERPRINT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_FINGERPRINT_TIMEOUT_MS = 1500;
+
+// Métricas de performance de descoberta
+interface DiscoveryMetrics {
+  totalScans: number;
+  successfulDiscoveries: number;
+  failedDiscoveries: number;
+  averageDiscoveryTime: number;
+  lastScanTime: number;
+  overloadAlerts: number;
+  duplicatePreventionHits: number;
+}
+
+const discoveryMetrics: DiscoveryMetrics = {
+  totalScans: 0,
+  successfulDiscoveries: 0,
+  failedDiscoveries: 0,
+  averageDiscoveryTime: 0,
+  lastScanTime: 0,
+  overloadAlerts: 0,
+  duplicatePreventionHits: 0
+};
+
+const updateDiscoveryMetrics = (success: boolean, duration: number) => {
+  discoveryMetrics.totalScans++;
+  if (success) {
+    discoveryMetrics.successfulDiscoveries++;
+  } else {
+    discoveryMetrics.failedDiscoveries++;
+  }
+  
+  // Atualizar média móvel do tempo de descoberta
+  const alpha = 0.1; // Fator de suavização
+  discoveryMetrics.averageDiscoveryTime = 
+    alpha * duration + (1 - alpha) * discoveryMetrics.averageDiscoveryTime;
+  
+  discoveryMetrics.lastScanTime = Date.now();
+  
+  // Log de métricas a cada 10 scans
+  if (discoveryMetrics.totalScans % 10 === 0) {
+    console.log(`[ELO] Discovery metrics: ${JSON.stringify(discoveryMetrics)}`);
+  }
+};
+
+export { discoveryMetrics };
 const SSDP_ADDRESS = '239.255.255.250';
 const SSDP_PORT = 1900;
 
@@ -89,15 +139,29 @@ const logDiscovery = async (payload: {
   tag?: string;
   headers?: Record<string, string>;
 }) => {
-  await appendLogEntry({
-    timestamp: new Date().toISOString(),
-    device: 'discovery',
-    event: 'device_discovery',
-    payload
-  });
+  const startTime = Date.now();
+  
+  try {
+    await appendLogEntry({
+      timestamp: new Date().toISOString(),
+      device: 'discovery',
+      event: 'device_discovery',
+      payload
+    });
 
-  // Trigger AI analysis to propose a driver for this new device
-  await triggerDriverGeneration(payload);
+    // Trigger AI analysis to propose a driver for this new device
+    await triggerDriverGeneration(payload);
+    
+    // Registrar métrica de sucesso
+    const duration = Date.now() - startTime;
+    updateDiscoveryMetrics(true, duration);
+    
+  } catch (error) {
+    // Registrar métrica de falha
+    const duration = Date.now() - startTime;
+    updateDiscoveryMetrics(false, duration);
+    console.error('[ELO] Discovery processing failed:', error);
+  }
 };
 
 const parsePortList = (value: string | undefined, fallback: number[]) => {

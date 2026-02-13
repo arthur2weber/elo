@@ -1,0 +1,23 @@
+streams:
+  # Streams são registrados dinamicamente via API pelo ELO backend
+  # Para cameras H265: registra duas sources por stream:
+  #   1) native RTSP com UDP (para snapshots e clients que suportam H265)
+  #   2) ffmpeg com #input=rtsp/udp#video=h264 (transcoding para browsers)
+  #
+  # go2rtc automaticamente escolhe a source adequada baseado no codec do consumer
+  pending_192_168_16_104:
+    - rtsp://admin:3l37a2t3@192.168.16.104:554/onvif1#transport=udp
+    - ffmpeg:rtsp://admin:3l37a2t3@192.168.16.104:554/onvif1#input=rtsp/udp#video=h264
+  pending_192_168_16_103:
+    - rtsp://admin:3l37a2t3@192.168.16.103:554/onvif1#transport=udp
+    - ffmpeg:rtsp://admin:3l37a2t3@192.168.16.103:554/onvif1#input=rtsp/udp#video=h264
+
+api:
+  listen: ":1984"
+  origin: "*"
+
+webrtc:
+  listen: ":8555"
+
+log:
+  level: info

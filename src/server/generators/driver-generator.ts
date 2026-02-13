@@ -13,6 +13,7 @@ import axios from 'axios';
 import { probeTcpPort } from '../discovery';
 import { identifyDevice } from './device-identification';
 import { DISCOVERY_MAP, PROTOCOL_REFERENCES } from './knowledge-base';
+import { discoveryMetrics } from '../discovery';
 
 interface DiscoveryPayload {
     name?: string;
@@ -29,9 +30,13 @@ interface DiscoveryPayload {
     notes?: any;
     forceRegenerate?: boolean;
     mac?: string;
+    brand?: string;
+    model?: string;
+    username?: string;
+    password?: string;
 }
 
-const COMMON_PORTS = [80, 8001, 8002, 7678, 9119, 9197, 8060, 52235, 5001, 8080];
+const COMMON_PORTS = [80, 554, 5000, 8001, 8002, 7678, 8899, 9119, 9197, 8060, 52235, 5001, 8080];
 const GENERATION_QUEUE = new Set<string>();
 const GLOBAL_ATTEMPT_TRACKER = new Map<string, number>();
 const MAX_GLOBAL_ATTEMPTS = 3;
@@ -82,8 +87,63 @@ const scanDevicePorts = async (ip: string) => {
     // 2. Grab basic info from open ports (HEAD/GET)
     await Promise.all(openPorts.map(async (port) => {
         try {
+            // ONVIF probe: if port 5000 or 8899 is open, try SOAP GetDeviceInformation
+            if (port === 5000 || port === 8899) {
+                try {
+                    const onvifResp = await axios.post(`http://${ip}:${port}/onvif/device_service`, 
+                        '<?xml version="1.0"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Body><GetDeviceInformation xmlns="http://www.onvif.org/ver10/device/wsdl"/></s:Body></s:Envelope>',
+                        { headers: { 'Content-Type': 'application/soap+xml' }, timeout: 3000 }
+                    );
+                    const onvifData = typeof onvifResp.data === 'string' ? onvifResp.data : JSON.stringify(onvifResp.data);
+                    results[port] = `ONVIF device_service FOUND. Response: ${onvifData.slice(0, 300)}`;
+                    
+                    // Extract manufacturer/model from ONVIF response
+                    const mfgMatch = onvifData.match(/Manufacturer>([^<]+)</);
+                    const modelMatch = onvifData.match(/Model>([^<]+)</);
+                    const fwMatch = onvifData.match(/FirmwareVersion>([^<]+)</);
+                    if (mfgMatch) results[port] += ` | ONVIF_MFG: ${mfgMatch[1]}`;
+                    if (modelMatch) results[port] += ` | ONVIF_MODEL: ${modelMatch[1]}`;
+                    if (fwMatch) results[port] += ` | ONVIF_FW: ${fwMatch[1]}`;
+                    results[port] += ' | DETECTED: ONVIF Camera with PTZ support (port ' + port + ')';
+                    
+                    // Also check if PTZ service is available
+                    try {
+                        const capResp = await axios.post(`http://${ip}:${port}/onvif/device_service`,
+                            '<?xml version="1.0"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Body><GetCapabilities xmlns="http://www.onvif.org/ver10/device/wsdl"><Category>All</Category></GetCapabilities></s:Body></s:Envelope>',
+                            { headers: { 'Content-Type': 'application/soap+xml' }, timeout: 3000 }
+                        );
+                        const capData = typeof capResp.data === 'string' ? capResp.data : JSON.stringify(capResp.data);
+                        if (capData.includes('ptz_service')) {
+                            results[port] += ' | ONVIF_PTZ: YES (ptz_service available)';
+                        }
+                    } catch (_) {}
+                    
+                    return;
+                } catch (_) {}
+            }
+
             const response = await axios.get(`http://${ip}:${port}/`, { timeout: 1500 });
             results[port] = `Status: ${response.status}. Data Preview: ${JSON.stringify(response.data).slice(0, 200)}`;
+            
+            // Analyze HTTP headers for camera detection
+            const serverHeader = response.headers['server'] || response.headers['Server'];
+            if (serverHeader) {
+                if (serverHeader.toLowerCase().includes('hikvision')) {
+                    results[port] += ' | DETECTED: Hikvision Camera';
+                } else if (serverHeader.toLowerCase().includes('reolink')) {
+                    results[port] += ' | DETECTED: Reolink Camera';
+                } else if (serverHeader.toLowerCase().includes('amcrest')) {
+                    results[port] += ' | DETECTED: Amcrest Camera';
+                } else if (serverHeader.toLowerCase().includes('tplink')) {
+                    results[port] += ' | DETECTED: TP-Link Camera';
+                }
+            }
+            
+            // Check response content for camera indicators
+            const content = JSON.stringify(response.data).toLowerCase();
+            if (content.includes('camera') || content.includes('surveillance') || content.includes('ipcam')) {
+                results[port] += ' | CONTENT: Camera-related content detected';
+            }
         } catch (e: any) {
             results[port] = `Open, but HTTP Request failed: ${e.message}`;
             // Try specific known paths
@@ -122,17 +182,24 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
             protocol: payload.protocol || payload.source || 'unknown',
             ip: targetIp || '',
             notes: payload.notes,
-            integrationStatus: 'pending'
+            integrationStatus: 'pending',
+            // Preserve/Apply credentials and metadata if provided in payload
+            brand: payload.brand,
+            model: payload.model,
+            username: payload.username,
+            password: payload.password
         });
         console.log(`[DriverGenerator] Marked ${targetIp} (${fallbackDeviceName}) as pending integration.`);
     };
 
     if (GLOBAL_ATTEMPT_TRACKER.get(trackingKey) && (GLOBAL_ATTEMPT_TRACKER.get(trackingKey)! >= MAX_GLOBAL_ATTEMPTS) && !payload.forceRegenerate) {
         console.log(`[DriverGenerator] Skipping generation for ${trackingKey} (Max attempts reached: ${MAX_GLOBAL_ATTEMPTS})`);
+        discoveryMetrics.overloadAlerts++;
         return;
     }
     
     if (GENERATION_QUEUE.has(deviceKey) && !payload.forceRegenerate) {
+        discoveryMetrics.overloadAlerts++;
         return;
     }
     GENERATION_QUEUE.add(deviceKey);
@@ -198,7 +265,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
     try {
         let extraContext = {};
         
-        if (targetIp) {
+        if (targetIp && !payload.forceRegenerate) {
             extraContext = await scanDevicePorts(targetIp);
         }
 
@@ -274,9 +341,12 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
 
             let identityResult = identifyDevice(targetIp || '0.0.0.0', payload.port || 0, targetMac, {
                 name: payload.name,
-                manufacturer: txt?.manufacturer,
+                manufacturer: payload.brand || txt?.manufacturer,
                 model: txt?.model
             });
+            
+            console.log(`[DriverGenerator] Payload brand: ${payload.brand}`);
+            console.log(`[DriverGenerator] Identity result:`, identityResult);
 
             // If no immediate hint, check scanned ports
             if (!identityResult && extraContext) {
@@ -284,7 +354,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                  for (const p of ports) {
                      const res = identifyDevice(targetIp || '0.0.0.0', p, targetMac, {
                         name: payload.name,
-                        manufacturer: txt?.manufacturer,
+                        manufacturer: payload.brand || txt?.manufacturer,
                         model: txt?.model
                      });
                      if (res) {
@@ -302,11 +372,18 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     console.log(`[DriverGenerator] MATCHED TEMPLATE: ${identityResult.template}. Skipping LLM.`);
                     const template = DEVICE_TEMPLATES[identityResult.template];
                     
-                    // Personalize template with IP
-                    const actionsStr = JSON.stringify(template.actions).replace(/<ip>/g, targetIp || '127.0.0.1');
+                    // Determine device ID for template personalization
+                    const currentDevicesList = await readDevices();
+                    const existingDevice = currentDevicesList.find(d => d.ip === targetIp);
+                    const deviceId = existingDevice?.id || sanitizeId(`pending_${targetIp}`);
+                    
+                    // Personalize template: replace <ip> (legacy) and {device_id} (go2rtc snapshot)
+                    let actionsStr = JSON.stringify(template.actions)
+                        .replace(/<ip>/g, targetIp || '127.0.0.1')
+                        .replace(/\{device_id\}/g, deviceId);
                     
                     parsed = {
-                        deviceName: template.id,
+                        deviceName: template.name || template.id,
                         deviceType: template.type,
                         capabilities: template.capabilities || [],
                         actions: JSON.parse(actionsStr)
@@ -340,6 +417,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     ...extraHints
                 ].filter(Boolean).join('\n');
 
+                console.log(`[DriverGenerator] About to call Gemini for ${targetIp}...`);
                 const rawResponse = await runGeminiPrompt(prompts.generateDriver({
                     ip: targetIp || 'unknown',
                     port: payload.port || 0,
@@ -347,7 +425,8 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     rawInfo: rawInfoPretty,
                     identificationHint: combinedHint || undefined,
                     previousAttemptError: lastError,
-                    userNotes: payload.notes ? JSON.stringify(payload.notes) : undefined
+                    userNotes: payload.notes ? JSON.stringify(payload.notes) : undefined,
+                    deviceType: payload.type
                 }), {
                     maxOutputTokens: 8192,
                     metadata: {
@@ -362,6 +441,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                         }
                     }
                 });
+                console.log(`[DriverGenerator] Gemini call completed for ${targetIp}, response length: ${rawResponse.length}`);
 
                 // 2. Parse JSON response
                 const cleanJson = rawResponse.replace(/```json\n?|\n?```/g, '').trim();
@@ -383,7 +463,12 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
             }
 
             // 3. Auto-Verification (The "Test" Phase)
-            const verification = await verifyDriverProposal(parsed);
+            const deviceInfo = {
+                ip: targetIp,
+                username: payload.username,
+                password: payload.password
+            };
+            const verification = await verifyDriverProposal(parsed, deviceInfo);
             
             const aiProposedName = (parsed.deviceName || 'unknown_device').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
             const suggestionId = `driver-${Date.now()}`;
@@ -422,6 +507,13 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     created_at: new Date().toISOString()
                 });
 
+                // Preserve existing manual data when upgrading to active driver
+                const existingForMerge = (await readDevices()).find(d => d.id === targetId);
+                const mergedBrand = payload.brand || existingForMerge?.brand;
+                const mergedModel = payload.model || existingForMerge?.model;
+                const mergedUsername = payload.username || existingForMerge?.username;
+                const mergedPassword = payload.password || existingForMerge?.password;
+
                 await addDevice({
                     id: targetId,
                     name: parsed.deviceName,
@@ -432,7 +524,11 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     ip: targetIp || '',
                     capabilities: parsed.capabilities || [],
                     notes: payload.notes,
-                    integrationStatus: verification.needsPairing ? 'pairing_required' : 'ready'
+                    integrationStatus: verification.needsPairing ? 'pairing_required' : 'ready',
+                    brand: mergedBrand,
+                    model: mergedModel,
+                    username: mergedUsername,
+                    password: mergedPassword
                 });
 
                 await appendSuggestion({

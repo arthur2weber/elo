@@ -21,15 +21,26 @@ const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
 
 const getDb = () => new Database(getDbPath());
 
+const dbAll = async (db: any, query: string, params: any[] = []): Promise<any[]> => {
+  return db.prepare(query).all(...params);
+};
+
+const dbGet = async (db: any, query: string, params: any[] = []): Promise<any> => {
+  return db.prepare(query).get(...params);
+};
+
+const dbRun = async (db: any, query: string, params: any[] = []): Promise<any> => {
+  return db.prepare(query).run(...params);
+};
+
 export const appendSuggestion = async (entry: SuggestionEntry) => {
   const db = getDb();
   try {
     const timestamp = entry.timestamp || new Date().toISOString();
-    const insert = db.prepare(`
+    await dbRun(db, `
       INSERT OR REPLACE INTO suggestions (id, automation_name, message, code, status, required_approvals, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    insert.run(
+    `, [
       entry.id,
       entry.automationName,
       entry.message,
@@ -38,7 +49,7 @@ export const appendSuggestion = async (entry: SuggestionEntry) => {
       entry.requiredApprovals || 3,
       timestamp,
       new Date().toISOString()
-    );
+    ]);
     return { ...entry, timestamp };
   } finally {
     db.close();
@@ -48,11 +59,11 @@ export const appendSuggestion = async (entry: SuggestionEntry) => {
 export const readSuggestions = async (): Promise<SuggestionEntry[]> => {
   const db = getDb();
   try {
-    const rows = db.prepare(`
+    const rows = await dbAll(db, `
       SELECT id, automation_name as automationName, message, code, status, required_approvals as requiredApprovals, created_at as timestamp, updated_at
       FROM suggestions
       ORDER BY created_at DESC
-    `).all();
+    `);
 
     return rows.map((row: any) => ({
       id: row.id,
@@ -80,12 +91,12 @@ export const getLatestSuggestions = async () => {
 export const getPendingSuggestions = async () => {
   const db = getDb();
   try {
-    const rows = db.prepare(`
+    const rows = await dbAll(db, `
       SELECT id, automation_name as automationName, message, code, status, required_approvals as requiredApprovals, created_at as timestamp, updated_at
       FROM suggestions
       WHERE status = 'PENDING'
       ORDER BY created_at DESC
-    `).all();
+    `);
 
     return rows.map((row: any) => ({
       id: row.id,
@@ -108,20 +119,19 @@ export const getPendingSuggestions = async () => {
 export const updateSuggestionStatus = async (id: string, status: SuggestionStatus) => {
   const db = getDb();
   try {
-    const update = db.prepare(`
+    const result = await dbRun(db, `
       UPDATE suggestions SET status = ?, updated_at = ? WHERE id = ?
-    `);
-    const result = update.run(status, new Date().toISOString(), id);
+    `, [status, new Date().toISOString(), id]);
 
     if (result.changes === 0) {
       throw new Error(`Suggestion ${id} not found.`);
     }
 
     // Return the updated suggestion
-    const row = db.prepare(`
+    const row = await dbGet(db, `
       SELECT id, automation_name as automationName, message, code, status, required_approvals as requiredApprovals, created_at as timestamp, updated_at
       FROM suggestions WHERE id = ?
-    `).get(id) as any;
+    `, [id]) as any;
 
     return {
       id: row.id,

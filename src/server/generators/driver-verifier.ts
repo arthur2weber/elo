@@ -1,6 +1,6 @@
 import { GenericHttpDriver, DriverResult } from '../../drivers/http-generic';
 
-export const verifyDriverProposal = async (driverConfig: any): Promise<{ success: boolean; error?: string; logs?: string[]; needsPairing?: boolean }> => {
+export const verifyDriverProposal = async (driverConfig: any, deviceInfo?: { ip?: string; username?: string; password?: string }): Promise<{ success: boolean; error?: string; logs?: string[]; needsPairing?: boolean }> => {
     try {
         const driver = new GenericHttpDriver(driverConfig);
         const actions = driver.getAvailableActions();
@@ -15,7 +15,20 @@ export const verifyDriverProposal = async (driverConfig: any): Promise<{ success
 
         console.log(`[DriverVerifier] Testing action '${testAction}' for ${driverConfig.deviceName}...`);
         
-        const result: DriverResult = await driver.executeAction(testAction);
+        // Use real device params if available, otherwise fall back to mock
+        const testParams = deviceInfo?.ip ? {
+            ip: deviceInfo.ip,
+            username: deviceInfo.username || 'admin',
+            password: deviceInfo.password || 'admin'
+        } : {
+            ip: '127.0.0.1',
+            username: 'admin',
+            password: 'admin'
+        };
+        
+        console.log(`[DriverVerifier] Testing with params: ip=${testParams.ip}, user=${testParams.username}`);
+        
+        const result: DriverResult = await driver.executeAction(testAction, testParams);
         
         const responseData = typeof result.data === 'string' ? result.data : JSON.stringify(result.data || '');
         
@@ -31,7 +44,9 @@ export const verifyDriverProposal = async (driverConfig: any): Promise<{ success
             errorMessage.includes('403') ||
             errorMessage.includes('websocket') ||
             errorMessage.includes('socket hung up') ||
-            errorMessage.includes('econnreset');
+            errorMessage.includes('econnreset') ||
+            errorMessage.includes('timeout') ||
+            errorMessage.includes('econnrefused');
 
         if (result.success || isAuthError) {
             return { 

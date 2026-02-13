@@ -120,12 +120,16 @@ export const IDENTIFICATION_TABLES = {
 };
 
 export const identifyDevice = (ip: string, port: number, mac?: string, extra?: { name?: string, manufacturer?: string, model?: string }): { hint: string, template?: string } | null => {
+    console.log(`[DeviceIdentification] Identifying device ${ip}:${port}, manufacturer: ${extra?.manufacturer}, name: ${extra?.name}, model: ${extra?.model}`);
     let hints: string[] = [];
     let templateId: string | undefined;
 
     const normalizedName = (extra?.name || '').toLowerCase();
     const normalizedManufacturer = (extra?.manufacturer || '').toLowerCase();
     const normalizedModel = (extra?.model || '').toLowerCase();
+
+    console.log(`[DeviceIdentification] Checking: manufacturer="${extra?.manufacturer}", model="${extra?.model}", name="${extra?.name}"`);
+    console.log(`[DeviceIdentification] Normalized: manufacturer="${normalizedManufacturer}", model="${normalizedModel}", name="${normalizedName}"`);
 
     // 1. Check OUI/MAC
     if (mac) {
@@ -152,6 +156,56 @@ export const identifyDevice = (ip: string, port: number, mac?: string, extra?: {
     if (normalizedManufacturer.includes('samsung') || normalizedName.includes('samsung') || normalizedModel.includes('qaq80')) {
         hints.push(`Metadata indicates a Samsung device.`);
         templateId = 'samsung-tizen-tv';
+    }
+
+    // 4. Check for Camera devices
+    const cameraPorts = [554, 8899, 80, 8080, 8000, 5000]; // RTSP, ONVIF, HTTP variants
+    const cameraKeywords = ['camera', 'cam', 'ipcam', 'nvr', 'dvr', 'surveillance', 'security', 'onvif'];
+    
+    if (cameraPorts.includes(port) || 
+        cameraKeywords.some(keyword => normalizedName.includes(keyword) || normalizedManufacturer.includes(keyword))) {
+        hints.push(`Device appears to be a camera or surveillance system.`);
+        
+        // Check for specific brands
+        if (normalizedManufacturer.toLowerCase().includes('hikvision') || 
+            normalizedModel.toLowerCase().includes('hikvision') ||
+            normalizedName.toLowerCase().includes('hikvision')) {
+            hints.push(`Detected Hikvision camera - using optimized template.`);
+            templateId = 'hikvision-camera';
+        } else if (normalizedManufacturer.toLowerCase().includes('tp-link') || 
+                   normalizedModel.toLowerCase().includes('tp-link') ||
+                   normalizedName.toLowerCase().includes('tp-link')) {
+            hints.push(`Detected TP-Link camera - using optimized template.`);
+            templateId = 'tplink-camera';
+        } else if (normalizedManufacturer.toLowerCase().includes('reolink') || 
+                   normalizedModel.toLowerCase().includes('reolink') ||
+                   normalizedName.toLowerCase().includes('reolink')) {
+            hints.push(`Detected Reolink camera - using optimized template.`);
+            templateId = 'reolink-camera';
+        } else if (normalizedManufacturer.toLowerCase().includes('amcrest') || 
+                   normalizedModel.toLowerCase().includes('amcrest') ||
+                   normalizedName.toLowerCase().includes('amcrest')) {
+            hints.push(`Detected Amcrest camera - using optimized template.`);
+            templateId = 'amcrest-camera';
+        } else if (normalizedManufacturer.toLowerCase().includes('yoosee') || 
+                   normalizedModel.toLowerCase().includes('yoosee') ||
+                   normalizedName.toLowerCase().includes('yoosee') ||
+                   normalizedName.toLowerCase().includes('cloudedge') ||
+                   normalizedName.toLowerCase().includes('camhi')) {
+            hints.push(`Detected Yoosee/CamHi camera. CRITICAL: Port 80 is usually CLOSED on these cameras. Use ONVIF on port 5000 for PTZ (SOAP ContinuousMove) and RTSP on port 554 for streaming (/onvif1 path).`);
+            templateId = 'yoosee-camera';
+        } else if (port === 5000 || port === 8899) {
+            // ONVIF port detected but no specific brand match
+            hints.push(`Detected ONVIF camera on port ${port}. Using ONVIF PTZ template with SOAP ContinuousMove. Profile token is typically "IPCProfilesToken0".`);
+            templateId = 'onvif-ptz-camera';
+        } else if (port === 554) {
+            // RTSP port - likely a camera, try ONVIF template as default
+            hints.push(`RTSP port 554 detected. Camera likely supports ONVIF on port 5000 for PTZ control.`);
+            templateId = 'onvif-ptz-camera';
+        } else {
+            hints.push(`Using generic camera template.`);
+            templateId = 'generic-camera';
+        }
     }
 
     // 3. Combine hints

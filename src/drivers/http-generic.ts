@@ -55,6 +55,11 @@ export class GenericHttpDriver {
             });
         }
 
+        // Check for remaining placeholders
+        if (url.match(/\{.*?\}/) || url.match(/<.*?>/)) {
+            console.warn(`[GenericHttpDriver] Warning: URL still contains placeholders: ${url}. Keys available:`, Object.keys(params || {}));
+        }
+
         // Clean up remaining placeholders
         // url = url.replace(/\{.*?\}/g, '').replace(/<.*?>/g, '');
         // if (body && typeof body === 'string') {

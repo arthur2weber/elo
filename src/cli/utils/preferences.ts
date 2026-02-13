@@ -21,15 +21,25 @@ const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
 
 const getDb = () => new Database(getDbPath());
 
+const dbAll = async (db: any, query: string, params: any[] = []): Promise<any[]> => {
+  return db.prepare(query).all(...params);
+};
+
+const dbGet = async (db: any, query: string, params: any[] = []): Promise<any> => {
+  return db.prepare(query).get(...params);
+};
+
+const dbRun = async (db: any, query: string, params: any[] = []): Promise<any> => {
+  return db.prepare(query).run(...params);
+};
+
 export const appendDecision = async (entry: DecisionEntry) => {
   const db = getDb();
   try {
-    const insert = db.prepare(`
+    const result = await dbRun(db, `
       INSERT INTO decisions (timestamp, user, context, action_key, suggestion, accepted, status, details)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    const result = insert.run(
+    `, [
       entry.timestamp || new Date().toISOString(),
       entry.user ?? 'default',
       entry.context ?? '',
@@ -38,10 +48,10 @@ export const appendDecision = async (entry: DecisionEntry) => {
       entry.accepted ? 1 : 0,
       entry.status || 'APPROVED',
       JSON.stringify(entry.details || {})
-    );
+    ]);
     
     return {
-      id: result.lastInsertRowid,
+      id: result?.lastInsertRowid,
       ...entry
     };
   } finally {
@@ -52,14 +62,13 @@ export const appendDecision = async (entry: DecisionEntry) => {
 export const readDecisions = async (limit = 200): Promise<DecisionEntry[]> => {
   const db = getDb();
   try {
-    const select = db.prepare(`
+    const rows = await dbAll(db, `
       SELECT timestamp, user, context, action_key as actionKey, suggestion, accepted, status, details
       FROM decisions
       ORDER BY timestamp DESC
       LIMIT ?
-    `);
+    `, [limit]);
     
-    const rows = select.all(limit) as any[];
     return rows.map((row: any) => ({
       timestamp: row.timestamp,
       user: row.user,

@@ -29,6 +29,11 @@ export interface Device {
     secrets?: Record<string, string>;
     config?: Record<string, any>;
     notes?: any;
+    // Camera-specific fields
+    brand?: string;
+    model?: string;
+    username?: string;
+    password?: string;
 }
 
 export type DeviceConfig = Device;
@@ -37,10 +42,18 @@ const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
 
 const getDb = () => new Database(getDbPath());
 
+const dbAll = async (db: any, query: string, params: any[] = []): Promise<any[]> => {
+    return db.prepare(query).all(...params);
+};
+
+const dbRun = async (db: any, query: string, params: any[] = []): Promise<any> => {
+    return db.prepare(query).run(...params);
+};
+
 export async function readDevices(): Promise<Device[]> {
     const db = getDb();
     try {
-        const rows = db.prepare('SELECT * FROM devices').all();
+        const rows = await dbAll(db, 'SELECT * FROM devices');
         return rows.map((row: any) => ({
             ...row,
             secrets: JSON.parse(row.secrets || '{}'),
@@ -55,11 +68,10 @@ export async function readDevices(): Promise<Device[]> {
 export async function addDevice(device: Device): Promise<void> {
     const db = getDb();
     try {
-        const insert = db.prepare(`
-            INSERT OR REPLACE INTO devices (id, name, type, ip, mac, protocol, endpoint, secrets, config, notes, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        insert.run(
+        await dbRun(db, `
+            INSERT OR REPLACE INTO devices (id, name, type, ip, mac, protocol, endpoint, secrets, config, notes, brand, model, username, password, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
             device.id,
             device.name,
             device.type,
@@ -70,8 +82,12 @@ export async function addDevice(device: Device): Promise<void> {
             JSON.stringify(device.secrets || {}),
             JSON.stringify(device.config || {}),
             device.notes,
+            device.brand,
+            device.model,
+            device.username,
+            device.password,
             new Date().toISOString()
-        );
+        ]);
     } finally {
         db.close();
     }
@@ -91,11 +107,14 @@ export async function updateDevice(id: string, updates: Partial<Device>): Promis
         if (updates.secrets) { setParts.push('secrets = ?'); values.push(JSON.stringify(updates.secrets)); }
         if (updates.config) { setParts.push('config = ?'); values.push(JSON.stringify(updates.config)); }
         if (updates.notes !== undefined) { setParts.push('notes = ?'); values.push(updates.notes); }
+        if (updates.brand !== undefined) { setParts.push('brand = ?'); values.push(updates.brand); }
+        if (updates.model !== undefined) { setParts.push('model = ?'); values.push(updates.model); }
+        if (updates.username !== undefined) { setParts.push('username = ?'); values.push(updates.username); }
+        if (updates.password !== undefined) { setParts.push('password = ?'); values.push(updates.password); }
         setParts.push('updated_at = ?'); values.push(new Date().toISOString());
         values.push(id);
 
-        const update = db.prepare(`UPDATE devices SET ${setParts.join(', ')} WHERE id = ?`);
-        update.run(...values);
+        await dbRun(db, `UPDATE devices SET ${setParts.join(', ')} WHERE id = ?`, values);
     } finally {
         db.close();
     }
@@ -104,8 +123,7 @@ export async function updateDevice(id: string, updates: Partial<Device>): Promis
 export async function deleteDevice(id: string): Promise<void> {
     const db = getDb();
     try {
-        const del = db.prepare('DELETE FROM devices WHERE id = ?');
-        del.run(id);
+        await dbRun(db, 'DELETE FROM devices WHERE id = ?', [id]);
     } finally {
         db.close();
     }

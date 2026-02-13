@@ -31,8 +31,8 @@ export const addLogHandler = async (options: AddLogOptions) => {
       payload: parsePayload(options.payload)
     };
 
-    const result = await appendLogEntry(entry);
-    console.log(`Log appended to ${result.logPath}`);
+    await appendLogEntry(entry);
+    console.log(`Log appended to database`);
   } catch (error) {
     console.error('Failed to append log:', (error as Error).message);
   }

@@ -6,6 +6,7 @@ import { startDecisionLoop } from './decision-loop';
 import { startDiscovery } from './discovery';
 import { loadAutomations, runAutomations } from './automation_engine';
 import { registerHttpUi } from './http-ui';
+import { syncCameraStreams } from './go2rtc-sync';
 
 const app = express();
 const server = createServer(app);
@@ -45,6 +46,9 @@ const startServer = async () => {
         console.log('[ELO] Starting Network Discovery...');
         startDiscovery();
     }
+
+    // Register existing camera streams with go2rtc
+    syncCameraStreams().catch((err: Error) => console.error('[ELO] Failed to sync camera streams:', err));
 
     const decisionEnabled = process.env.ELO_DECISION_LOOP_ENABLED !== 'false';
     if (decisionEnabled) {
