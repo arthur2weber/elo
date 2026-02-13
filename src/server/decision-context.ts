@@ -1,4 +1,6 @@
-import { LogEntry, RequestLogEntry } from '../cli/utils/storage-files';
+import Database from 'better-sqlite3';
+import path from 'path';
+import { RequestLogEntry, readRecentRequests } from '../cli/utils/storage-files';
 import { DeviceConfig } from '../cli/utils/device-registry';
 
 export type DeviceStatusSnapshot = {
@@ -30,19 +32,13 @@ export type StructuredDecisionContext = {
   requests: DecisionRequestEntry[];
 };
 
+const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
+
+const getDb = () => new Database(getDbPath());
+
 const SNAPSHOT_OMIT_KEYS = new Set(['raw', 'rawHex', 'headers', 'body', 'html', 'dump', 'log', 'trace']);
 const MAX_SNAPSHOT_STRING = 512;
 const MAX_PAYLOAD_STRING = 512;
-
-const shouldSkipLogEntry = (entry: LogEntry) => {
-  if (entry.device === 'discovery') {
-    return true;
-  }
-  if (entry.event === 'device_discovery') {
-    return true;
-  }
-  return false;
-};
 
 const truncate = (value: string, limit: number) => (value.length > limit
   ? `${value.slice(0, limit)}… [truncated ${value.length - limit} chars]`
@@ -116,65 +112,88 @@ const sanitizeRequestsForContext = (entries: RequestLogEntry[]): DecisionRequest
   });
 };
 
-export const buildDeviceStatusSnapshot = (logs: LogEntry[]): DeviceStatusSnapshot[] => {
-  const latest = new Map<string, DeviceStatusSnapshot>();
+export const buildDeviceStatusSnapshot = async (): Promise<DeviceStatusSnapshot[]> => {
+  const db = getDb();
+  try {
+    // Get latest event per device, excluding discovery events
+    const rows = db.prepare(`
+      SELECT device_id, event_type, timestamp, state
+      FROM events
+      WHERE device_id != 'discovery' AND event_type != 'device_discovery'
+      AND (device_id, timestamp) IN (
+        SELECT device_id, MAX(timestamp)
+        FROM events
+        WHERE device_id != 'discovery' AND event_type != 'device_discovery'
+        GROUP BY device_id
+      )
+      ORDER BY timestamp DESC
+    `).all();
 
-  logs.forEach((entry) => {
-    if (shouldSkipLogEntry(entry)) {
-      return;
-    }
-    const current = latest.get(entry.device);
-    if (!current || entry.timestamp >= current.timestamp) {
-      latest.set(entry.device, {
-        device: entry.device,
-        lastEvent: entry.event,
-        timestamp: entry.timestamp,
-        payload: sanitizeSnapshotPayload(entry.payload)
-      });
-    }
-  });
-
-  return Array.from(latest.values());
+    return rows.map((row: any) => ({
+      device: row.device_id,
+      lastEvent: row.event_type,
+      timestamp: row.timestamp,
+      payload: sanitizeSnapshotPayload(JSON.parse(row.state))
+    }));
+  } finally {
+    db.close();
+  }
 };
 
-export const buildDeviceStatusHistory = (logs: LogEntry[], limit = 20): DeviceStatusHistoryEntry[] => {
-  const chronological = logs
-    .filter((entry) => !shouldSkipLogEntry(entry))
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+export const buildDeviceStatusHistory = async (limit = 20): Promise<DeviceStatusHistoryEntry[]> => {
+  const db = getDb();
+  try {
+    // Get recent events per device, excluding duplicates and discovery
+    const rows = db.prepare(`
+      SELECT device_id, event_type, timestamp, state
+      FROM events
+      WHERE device_id != 'discovery' AND event_type != 'device_discovery'
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(limit * 2); // Get more to filter duplicates
 
-  const history: DeviceStatusHistoryEntry[] = [];
-  const lastSignature = new Map<string, string>();
+    const history: DeviceStatusHistoryEntry[] = [];
+    const lastSignature = new Map<string, string>();
 
-  chronological.forEach((entry) => {
-    const payload = sanitizeSnapshotPayload(entry.payload);
-    const signature = JSON.stringify({ event: entry.event, payload });
-    if (lastSignature.get(entry.device) === signature) {
-      return;
-    }
-    lastSignature.set(entry.device, signature);
-    history.push({
-      device: entry.device,
-      event: entry.event,
-      timestamp: entry.timestamp,
-      payload
+    // Process in chronological order (reverse the DESC order)
+    rows.reverse().forEach((row: any) => {
+      const payload = sanitizeSnapshotPayload(JSON.parse(row.state));
+      const signature = JSON.stringify({ event: row.event_type, payload });
+      if (lastSignature.get(row.device_id) === signature) {
+        return;
+      }
+      lastSignature.set(row.device_id, signature);
+      history.push({
+        device: row.device_id,
+        event: row.event_type,
+        timestamp: row.timestamp,
+        payload
+      });
     });
-  });
 
-  return history.slice(-limit);
+    return history.slice(-limit);
+  } finally {
+    db.close();
+  }
 };
 
 export const formatDecisionContext = (context: StructuredDecisionContext) => {
   return JSON.stringify(context, null, 2);
 };
 
-export const buildDecisionContext = (
-  devices: DeviceConfig[],
-  statusSnapshot: DeviceStatusSnapshot[],
-  statusHistory: DeviceStatusHistoryEntry[],
-  requests: RequestLogEntry[]
-): StructuredDecisionContext => ({
-  devices,
-  statusSnapshot,
-  statusHistory,
-  requests: sanitizeRequestsForContext(requests)
-});
+export const buildDecisionContext = async (
+  devices: DeviceConfig[]
+): Promise<StructuredDecisionContext> => {
+  const [statusSnapshot, statusHistory, requests] = await Promise.all([
+    buildDeviceStatusSnapshot(),
+    buildDeviceStatusHistory(),
+    readRecentRequests(50)
+  ]);
+
+  return {
+    devices,
+    statusSnapshot,
+    statusHistory,
+    requests: sanitizeRequestsForContext(requests)
+  };
+};

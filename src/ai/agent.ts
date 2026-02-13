@@ -1,5 +1,6 @@
 import { runGeminiPrompt } from './gemini';
 import { prompts } from './prompts';
+import crypto from 'crypto';
 
 export type AutomationSpec = {
     name: string;
@@ -50,6 +51,67 @@ const computeThinkingBudgetFromJson = (payload: Record<string, unknown>) => {
 };
 
 class AIAgent {
+    // Simple in-memory cache to avoid re-calling the LLM for the same patterns
+    private patternCache: Map<string, { patterns: string; generatedCode?: string }> = new Map();
+
+    private computeLogsHash(logs: Array<Record<string, unknown>>): string {
+        const raw = JSON.stringify(logs);
+        return crypto.createHash('sha1').update(raw).digest('hex');
+    }
+
+    private getStateSignature(log: Record<string, unknown>): string {
+        if (log == null) return '';
+        if (Object.prototype.hasOwnProperty.call(log, 'state')) return JSON.stringify((log as any).state);
+        if (Object.prototype.hasOwnProperty.call(log, 'status')) return JSON.stringify((log as any).status);
+        if (Object.prototype.hasOwnProperty.call(log, 'value')) return JSON.stringify((log as any).value);
+        // Fallback: use the whole object except timestamp
+        const copy: Record<string, unknown> = { ...log };
+        delete copy['timestamp'];
+        return JSON.stringify(copy);
+    }
+
+    private filterChangeLogs(logs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+        if (!Array.isArray(logs) || logs.length <= 1) return logs;
+        const filtered: Array<Record<string, unknown>> = [];
+        // Always include first event as reference
+        filtered.push(logs[0]);
+        for (let i = 1; i < logs.length; i++) {
+            const prev = logs[i - 1];
+            const curr = logs[i];
+            const prevSig = this.getStateSignature(prev);
+            const currSig = this.getStateSignature(curr);
+            if (prevSig !== currSig) {
+                filtered.push(curr);
+            }
+        }
+        return filtered;
+    }
+
+    private summarizePatterns(logs: Array<Record<string, unknown>>): string {
+        const patternMap: Record<string, number> = {};
+        for (const log of logs) {
+            const ts = (log.timestamp as string) ?? (log.time as string) ?? (log.ts as string);
+            let hour = 'unknown';
+            if (ts) {
+                const d = new Date(ts);
+                if (!Number.isNaN(d.getTime())) {
+                    hour = String(d.getHours());
+                }
+            }
+            const device = (log.deviceId ?? log.device ?? log.id) as string ?? 'unknown_device';
+            const action = (log.action ?? log.type ?? log.event) as string ?? this.getStateSignature(log);
+            const key = `hour:${hour} - ${device}: ${action}`;
+            patternMap[key] = (patternMap[key] || 0) + 1;
+        }
+
+        const entries = Object.entries(patternMap)
+            .filter(([_, count]) => count >= 3) // threshold for potential proactive suggestion
+            .sort((a, b) => b[1] - a[1]);
+
+        if (entries.length === 0) return '';
+
+        return entries.map(([key, count]) => `${key} ocorreu ${count} vezes.`).join('\n');
+    }
     async processInput(input: string): Promise<string> {
         const prompt = `${prompts.welcome}\n\n${input}`;
         return runGeminiPrompt(prompt, {
@@ -105,20 +167,36 @@ class AIAgent {
     }
 
     async updateAutomationCode(spec: AutomationUpdateSpec): Promise<string> {
+        // Pre-process logs: filter out redundant (no-state-change) entries and summarize patterns
+        const filteredLogs = this.filterChangeLogs(spec.logs || []);
+        const patternsSummary = this.summarizePatterns(filteredLogs);
+
+        // Cache key for patterns - avoid repeated LLM calls for identical recent patterns
+        const logsHash = this.computeLogsHash(filteredLogs);
+        const cacheEntry = this.patternCache.get(spec.name || logsHash);
+        if (cacheEntry && cacheEntry.patterns === patternsSummary && cacheEntry.generatedCode) {
+            // Return cached generated code if available for same patterns
+            return cacheEntry.generatedCode;
+        }
+
         const prompt = prompts.workflowUpdateJson({
             name: spec.name,
             description: spec.description,
             preferences: spec.preferences,
-            logs: spec.logs,
-            currentWorkflow: spec.currentCode
+            logs: filteredLogs,
+            currentWorkflow: spec.currentCode,
+            patterns: patternsSummary
         });
+
         const thinkingBudget = computeThinkingBudgetFromJson({
             name: spec.name,
             description: spec.description ?? '',
             preferences: spec.preferences ?? '',
-            logs: spec.logs,
-            currentCode: spec.currentCode
+            logs: filteredLogs,
+            currentCode: spec.currentCode,
+            patterns: patternsSummary
         });
+
         const response = await runGeminiPrompt(prompt, {
             thinkingBudget,
             metadata: {
@@ -127,12 +205,17 @@ class AIAgent {
                 extra: {
                     nameLength: spec.name.length,
                     descriptionLength: spec.description ? spec.description.length : 0,
-                    logsCount: spec.logs.length,
-                    currentCodeChars: spec.currentCode.length
+                    logsCount: filteredLogs.length,
+                    currentCodeChars: spec.currentCode.length,
+                    patternsSummaryChars: patternsSummary.length
                 }
             }
         });
-        return this.extractCode(response);
+
+        const code = this.extractCode(response);
+        // store in cache
+        this.patternCache.set(spec.name || logsHash, { patterns: patternsSummary, generatedCode: code });
+        return code;
     }
 
     async decideApprovalPolicy(input: {
@@ -140,6 +223,7 @@ class AIAgent {
         suggestion: string;
         history: string;
         context: string;
+        patterns?: string;
         fallback?: ApprovalPolicy;
     }): Promise<ApprovalPolicy> {
         const fallback: ApprovalPolicy = input.fallback ?? {
@@ -159,7 +243,8 @@ class AIAgent {
                 actionKey: input.actionKey,
                 suggestion: input.suggestion,
                 history: input.history,
-                context: input.context
+                context: input.context,
+                patterns: input.patterns
             });
             const response = await runGeminiPrompt(prompt, {
                 thinkingBudget: 0,

@@ -26,11 +26,13 @@ export const addDeviceHandler = async (options: AddDeviceOptions) => {
     const device: DeviceConfig = {
       id: options.id,
       name: options.name,
-      type: options.type,
+      type: options.type ?? 'unknown',
       room: options.room,
-      endpoint: options.endpoint,
+      endpoint: options.endpoint ?? '',
+      protocol: 'http',
+      ip: '',
       pollIntervalMs: parseInterval(options.pollIntervalMs)
-    };
+    } as unknown as DeviceConfig;
 
     await addDevice(device);
     console.log(`Device ${device.id} saved.`);

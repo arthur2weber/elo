@@ -5,6 +5,7 @@ import { buildPreferenceStats, getPreferenceSummary, readDecisions, shouldAutoAp
 import { appendDecision } from '../cli/utils/preferences';
 import { appendSuggestion } from '../cli/utils/suggestions';
 import { readDevices } from '../cli/utils/device-registry';
+import { getDriver } from '../cli/utils/drivers';
 import { promises as fs } from 'fs'; // Import fs
 import path from 'path'; // Import path
 import { buildDecisionContext, buildDeviceStatusHistory, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
@@ -83,32 +84,32 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
 
   const tick = async () => {
     const logs = await readRecentLogs(logLimit);
-    const requests = await readRecentRequests(requestLimit);
-  const preferenceSummary = await getPreferenceSummary();
-  const preferenceStats = buildPreferenceStats(await readDecisions(200));
-  const devices = await readDevices();
+    const preferenceSummary = await getPreferenceSummary();
+    const preferenceStats = buildPreferenceStats(await readDecisions(200));
+    const devices = await readDevices();
 
-  // Enrich devices with capabilities from driver files
-  const devicesWithCapabilities = await Promise.all(devices.map(async (device) => {
-      try {
-          const driverPath = path.join(process.cwd(), 'logs', 'drivers', `${device.id}.json`);
-          const driverContent = await fs.readFile(driverPath, 'utf-8');
-          const driver = JSON.parse(driverContent);
-          return {
-              ...device,
-              capabilities: Object.keys(driver.actions || {})
-          };
-      } catch (e) {
-          return { ...device, capabilities: [] };
-      }
-  }));
+    // Enrich devices with capabilities from driver database
+    const devicesWithCapabilities = await Promise.all(devices.map(async (device) => {
+        try {
+            const driverEntry = await getDriver(device.id);
+            if (driverEntry) {
+                return {
+                    ...device,
+                    capabilities: Object.keys(driverEntry.config.actions || {})
+                };
+            } else {
+                return { ...device, capabilities: [] };
+            }
+        } catch (e) {
+            // Ignore errors
+            return { ...device, capabilities: [] };
+        }
+    }));
 
-  const statusSnapshot = buildDeviceStatusSnapshot(logs);
-  const statusHistory = buildDeviceStatusHistory(logs, Math.min(logLimit, STATUS_HISTORY_LIMIT));
-  const sanitizedLogs = logs.map((entry) => sanitizeForPrompt(entry)) as typeof logs;
-  const structuredContext = buildDecisionContext(devicesWithCapabilities, statusSnapshot, statusHistory, requests);
-  const sanitizedStructuredContext = sanitizeForPrompt(structuredContext) as typeof structuredContext;
-  const decisionContext = formatDecisionContext(sanitizedStructuredContext);
+    const sanitizedLogs = logs.map((entry) => sanitizeForPrompt(entry)) as typeof logs;
+    const structuredContext = await buildDecisionContext(devicesWithCapabilities);
+    const sanitizedStructuredContext = sanitizeForPrompt(structuredContext) as typeof structuredContext;
+    const decisionContext = formatDecisionContext(sanitizedStructuredContext);
   const trimmedPreferenceSummary = truncateString(preferenceSummary ?? '');
 
     await Promise.all(automations.map(async (automationName) => {

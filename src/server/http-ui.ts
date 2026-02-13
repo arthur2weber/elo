@@ -71,7 +71,7 @@ const isOffTopic = (text: string) =>
   /()/i.test(text);
 
 const fallbackReply = () =>
-  'Bom dia (DEBUG). Estou à disposição para cuidar da casa e dos dispositivos. O que deseja ajustar agora?';
+  'Bom dia. Estou à disposição para cuidar da casa e dos dispositivos. O que deseja ajustar agora?';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -92,15 +92,15 @@ const rememberMessage = (sessionKey: string, entry: ChatMessage) => {
 };
 
 const buildOverview = async (limit: number) => {
-  const [devices, logs, requests, pending, suggestions, preferenceSummary] = await Promise.all([
+  const [devices, logs, requests, pending, suggestions, preferenceSummary, statusSnapshot] = await Promise.all([
     readDevices(),
     readRecentLogs(limit),
     readRecentRequests(limit),
     getPendingSuggestions(),
     getLatestSuggestions(),
-    getPreferenceSummary()
+    getPreferenceSummary(),
+    buildDeviceStatusSnapshot()
   ]);
-  const statusSnapshot = buildDeviceStatusSnapshot(logs);
   const discovery = logs.filter((entry) => entry.event === 'device_discovery');
 
   return {
@@ -213,9 +213,10 @@ export const registerHttpUi = (app: express.Express) => {
 
   app.get('/api/devices', async (req, res) => {
     try {
-      const limit = parseLimit(req.query.limit, DEFAULT_LIMIT);
-      const [devices, logs] = await Promise.all([readDevices(), readRecentLogs(limit)]);
-      const statusSnapshot = buildDeviceStatusSnapshot(logs);
+      const [devices, statusSnapshot] = await Promise.all([
+        readDevices(),
+        buildDeviceStatusSnapshot()
+      ]);
       res.json({ success: true, data: { devices, statusSnapshot } });
     } catch (error) {
       res.status(500).json({ success: false, error: (error as Error).message });
@@ -275,14 +276,13 @@ export const registerHttpUi = (app: express.Express) => {
         : typeof user === 'string' && user.trim()
           ? `user:${user.trim()}`
           : 'default';
-      const [devices, logs, requests] = await Promise.all([
+      const [devices, statusSnapshot, statusHistory, requests] = await Promise.all([
         readDevices(),
-        readRecentLogs(DEFAULT_LIMIT),
+        buildDeviceStatusSnapshot(),
+        buildDeviceStatusHistory(Math.min(DEFAULT_LIMIT, STATUS_HISTORY_LIMIT)),
         readRecentRequests(DEFAULT_LIMIT)
       ]);
-      const statusSnapshot = buildDeviceStatusSnapshot(logs);
-      const statusHistory = buildDeviceStatusHistory(logs, Math.min(DEFAULT_LIMIT, STATUS_HISTORY_LIMIT));
-      const contextPayload = buildDecisionContext(devices, statusSnapshot, statusHistory, requests);
+      const contextPayload = await buildDecisionContext(devices);
       const context = formatDecisionContext(contextPayload);
       const history = chatMemory.get(sessionKey) ?? [];
       const historyText = history.length ? formatHistory(history) : undefined;
@@ -294,10 +294,6 @@ export const registerHttpUi = (app: express.Express) => {
       const rawReply = await agent.processInputWithContext({ message, context, history: historyText });
       const parsed = parseChatJson(rawReply);
       const replyText = parsed ? parsed.message : rawReply;
-
-      // START DEBUG LOG
-      console.log('DEBUG CHECK:', { replyText, match: isOffTopic(replyText) });
-      // END DEBUG LOG
 
       // START MODIFIED BLOCK
       // if (isOffTopic(replyText)) {
@@ -474,35 +470,57 @@ export const registerHttpUi = (app: express.Express) => {
       console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
       console.log('[System] Manual reset EXECUTION started...');
       console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-      
-      const logsDir = path.join(process.cwd(), 'logs');
-      const driversDir = path.join(logsDir, 'drivers');
-      
-      // 1. Clear Registry
-      const devicesFile = path.join(logsDir, 'devices.json');
-      await fs.promises.writeFile(devicesFile, '[]', 'utf-8');
-      
-      // 2. Clear Logs
-      const logFiles = ['events.jsonl', 'requests.jsonl', 'suggestions.jsonl'];
-      for (const file of logFiles) {
-        const filePath = path.join(logsDir, file);
-        if (fs.existsSync(filePath)) {
-          await fs.promises.writeFile(filePath, '', 'utf-8');
-        }
-      }
-      
-      // 3. Purge Drivers
-      if (fs.existsSync(driversDir)) {
-        const files = await fs.promises.readdir(driversDir);
-        for (const file of files) {
-          if (file.endsWith('.json')) {
-            await fs.promises.unlink(path.join(driversDir, file));
+
+      // Import database functions
+      const Database = (await import('better-sqlite3')).default;
+      const path = await import('path');
+      const fs = await import('fs');
+
+      const dbPath = path.join(process.cwd(), 'data', 'elo.db');
+      const db = new Database(dbPath);
+
+      try {
+        // 1. Clear all database tables
+        console.log('[System] Clearing database tables...');
+        db.exec('DELETE FROM events');
+        db.exec('DELETE FROM requests');
+        db.exec('DELETE FROM suggestions');
+        db.exec('DELETE FROM ai_usage');
+        db.exec('DELETE FROM drivers');
+        db.exec('DELETE FROM devices');
+        db.exec('DELETE FROM decisions');
+
+        // Reset autoincrement counters
+        db.exec('DELETE FROM sqlite_sequence');
+
+        console.log('[System] Database tables cleared.');
+
+        // 2. Clear legacy log files (if they exist)
+        const logsDir = path.join(process.cwd(), 'logs');
+        const logFiles = ['events.jsonl', 'requests.jsonl', 'suggestions.jsonl', 'ai-usage.jsonl'];
+        for (const file of logFiles) {
+          const filePath = path.join(logsDir, file);
+          if (fs.existsSync(filePath)) {
+            await fs.promises.writeFile(filePath, '', 'utf-8');
           }
         }
-      }
 
-      console.log('[System] Reset completed successfully.');
-      res.json({ success: true, message: 'System reset completed. All devices and drivers purged.' });
+        // 3. Clear driver files
+        const driversDir = path.join(logsDir, 'drivers');
+        if (fs.existsSync(driversDir)) {
+          const files = await fs.promises.readdir(driversDir);
+          for (const file of files) {
+            if (file.endsWith('.json')) {
+              await fs.promises.unlink(path.join(driversDir, file));
+            }
+          }
+        }
+
+        console.log('[System] Reset completed successfully.');
+        res.json({ success: true, message: 'System reset completed. All devices, drivers, and tokens purged from database.' });
+      } finally {
+        db.close();
+      }
     } catch (error) {
       console.error('[System] Reset failed:', error);
       res.status(500).json({ success: false, error: (error as Error).message });

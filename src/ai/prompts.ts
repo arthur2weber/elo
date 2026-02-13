@@ -25,6 +25,7 @@ export const prompts = {
         preferences?: string;
         logs: Array<Record<string, unknown>>;
         currentWorkflow: string;
+        patterns?: string;
     }) => {
         return [
             'You are a smart-home automation engineer (ELO).',
@@ -34,6 +35,7 @@ export const prompts = {
             `Automation Name: ${input.name}.`,
             `Description: ${input.description}`,
             `Preferences: ${input.preferences}`,
+            `Patterns Summary: ${input.patterns ?? ''}`,
             `Current Code: ${input.currentWorkflow}`
         ].join('\n');
     },
@@ -42,6 +44,7 @@ export const prompts = {
         suggestion: string;
         history: string;
         context: string;
+        patterns?: string;
     }) => {
         return [
             'You are an assistant deciding whether an automation change should be auto-applied or require approvals.',
@@ -54,7 +57,8 @@ export const prompts = {
             `Action Key: ${input.actionKey}.`,
             `Suggestion: ${input.suggestion}.`,
             `History: ${input.history}.`,
-            `Context: ${input.context}.`
+            `Context: ${input.context}.`,
+            input.patterns ? `Patterns Summary: ${input.patterns}` : ''
         ].join('\n');
     },
     interpretUserReply: (input: {

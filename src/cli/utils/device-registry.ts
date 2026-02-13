@@ -1,5 +1,4 @@
-import fs from 'fs/promises';
-import { existsSync, writeFileSync, renameSync } from 'fs';
+import Database from 'better-sqlite3';
 import path from 'path';
 
 export type DeviceCapability = 
@@ -12,7 +11,7 @@ export type DeviceCapability =
     | 'temperature_sensor' 
     | 'humidity_sensor' 
     | 'motion_sensor'
-    | 'contact_sensor'
+    | 'contact_sensor' 
     | 'lock'
     | 'cover';
 
@@ -34,83 +33,80 @@ export interface Device {
 
 export type DeviceConfig = Device;
 
-const REGISTRY_PATH = path.join(process.cwd(), 'logs/devices.json');
+const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
+
+const getDb = () => new Database(getDbPath());
 
 export async function readDevices(): Promise<Device[]> {
+    const db = getDb();
     try {
-        if (!existsSync(REGISTRY_PATH)) {
-            return [];
-        }
-        const content = await fs.readFile(REGISTRY_PATH, 'utf-8');
-        if (!content || content.trim() === '') return [];
-        return JSON.parse(content);
-    } catch (error) {
-        console.error('Error reading devices.json:', error);
-        // If it's corrupted, try to move it and return empty
-        if (existsSync(REGISTRY_PATH)) {
-            const backupPath = `${REGISTRY_PATH}.corrupt.${Date.now()}`;
-            try {
-                renameSync(REGISTRY_PATH, backupPath);
-            } catch (e) {}
-        }
-        return [];
+        const rows = db.prepare('SELECT * FROM devices').all();
+        return rows.map((row: any) => ({
+            ...row,
+            secrets: JSON.parse(row.secrets || '{}'),
+            config: JSON.parse(row.config || '{}'),
+            capabilities: row.capabilities ? JSON.parse(row.capabilities) : undefined
+        }));
+    } finally {
+        db.close();
     }
 }
 
 export async function addDevice(device: Device): Promise<void> {
-    const devices = await readDevices();
-    const existingIndex = devices.findIndex(d => 
-        (d.mac && device.mac && d.mac === device.mac) || 
-        (d.ip === device.ip && d.id === device.id)
-    );
-
-    if (existingIndex >= 0) {
-        devices[existingIndex] = { ...devices[existingIndex], ...device };
-    } else {
-        devices.push(device);
-    }
-
-    // Atomic write to avoid corruption
-    const tempPath = `${REGISTRY_PATH}.tmp`;
-    const data = JSON.stringify(devices, null, 2);
-    
+    const db = getDb();
     try {
-        await fs.writeFile(tempPath, data);
-        await fs.rename(tempPath, REGISTRY_PATH);
-    } catch (error) {
-        console.error('Failed to write devices.json safely:', error);
-        // Fallback to sync write if rename fails (e.g. cross-device)
-        await fs.writeFile(REGISTRY_PATH, data);
+        const insert = db.prepare(`
+            INSERT OR REPLACE INTO devices (id, name, type, ip, mac, protocol, endpoint, secrets, config, notes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        insert.run(
+            device.id,
+            device.name,
+            device.type,
+            device.ip,
+            device.mac,
+            device.protocol,
+            device.endpoint,
+            JSON.stringify(device.secrets || {}),
+            JSON.stringify(device.config || {}),
+            device.notes,
+            new Date().toISOString()
+        );
+    } finally {
+        db.close();
     }
 }
 
 export async function updateDevice(id: string, updates: Partial<Device>): Promise<void> {
-    const devices = await readDevices();
-    const index = devices.findIndex(d => d.id === id);
-    if (index >= 0) {
-        devices[index] = { ...devices[index], ...updates };
-        const tempPath = `${REGISTRY_PATH}.tmp`;
-        const data = JSON.stringify(devices, null, 2);
-        try {
-            await fs.writeFile(tempPath, data);
-            await fs.rename(tempPath, REGISTRY_PATH);
-        } catch (error) {
-            await fs.writeFile(REGISTRY_PATH, data);
-        }
+    const db = getDb();
+    try {
+        const setParts: string[] = [];
+        const values: any[] = [];
+        if (updates.name) { setParts.push('name = ?'); values.push(updates.name); }
+        if (updates.type) { setParts.push('type = ?'); values.push(updates.type); }
+        if (updates.ip) { setParts.push('ip = ?'); values.push(updates.ip); }
+        if (updates.mac) { setParts.push('mac = ?'); values.push(updates.mac); }
+        if (updates.protocol) { setParts.push('protocol = ?'); values.push(updates.protocol); }
+        if (updates.endpoint) { setParts.push('endpoint = ?'); values.push(updates.endpoint); }
+        if (updates.secrets) { setParts.push('secrets = ?'); values.push(JSON.stringify(updates.secrets)); }
+        if (updates.config) { setParts.push('config = ?'); values.push(JSON.stringify(updates.config)); }
+        if (updates.notes !== undefined) { setParts.push('notes = ?'); values.push(updates.notes); }
+        setParts.push('updated_at = ?'); values.push(new Date().toISOString());
+        values.push(id);
+
+        const update = db.prepare(`UPDATE devices SET ${setParts.join(', ')} WHERE id = ?`);
+        update.run(...values);
+    } finally {
+        db.close();
     }
 }
 
 export async function deleteDevice(id: string): Promise<void> {
-    const devices = await readDevices();
-    const filtered = devices.filter(d => d.id !== id);
-    if (filtered.length !== devices.length) {
-        const tempPath = `${REGISTRY_PATH}.tmp`;
-        const data = JSON.stringify(filtered, null, 2);
-        try {
-            await fs.writeFile(tempPath, data);
-            await fs.rename(tempPath, REGISTRY_PATH);
-        } catch (error) {
-            await fs.writeFile(REGISTRY_PATH, data);
-        }
+    const db = getDb();
+    try {
+        const del = db.prepare('DELETE FROM devices WHERE id = ?');
+        del.run(id);
+    } finally {
+        db.close();
     }
 }

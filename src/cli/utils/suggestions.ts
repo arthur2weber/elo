@@ -1,6 +1,5 @@
-import { promises as fs } from 'fs';
+import Database from 'better-sqlite3';
 import path from 'path';
-import { getLogsDir } from './storage-files';
 
 export type SuggestionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'AUTO_APPLIED';
 
@@ -18,77 +17,126 @@ export type SuggestionEntry = {
   context?: string;
 };
 
-const getSuggestionsLogPath = () => path.join(getLogsDir(), 'suggestions.jsonl');
+const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
 
-const ensureLogs = async () => {
-  await fs.mkdir(getLogsDir(), { recursive: true });
-};
+const getDb = () => new Database(getDbPath());
 
 export const appendSuggestion = async (entry: SuggestionEntry) => {
-  await ensureLogs();
-  const payload = {
-    ...entry,
-    timestamp: entry.timestamp || new Date().toISOString()
-  };
-  await fs.appendFile(getSuggestionsLogPath(), `${JSON.stringify(payload)}\n`);
-  return payload;
-};
-
-const mergeSuggestion = (current: SuggestionEntry | undefined, next: SuggestionEntry) => {
-  if (!current) {
-    return next;
+  const db = getDb();
+  try {
+    const timestamp = entry.timestamp || new Date().toISOString();
+    const insert = db.prepare(`
+      INSERT OR REPLACE INTO suggestions (id, automation_name, message, code, status, required_approvals, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insert.run(
+      entry.id,
+      entry.automationName,
+      entry.message,
+      entry.code,
+      entry.status,
+      entry.requiredApprovals || 3,
+      timestamp,
+      new Date().toISOString()
+    );
+    return { ...entry, timestamp };
+  } finally {
+    db.close();
   }
-  return {
-    ...current,
-    ...next,
-    code: next.code ?? current.code
-  };
 };
 
 export const readSuggestions = async (): Promise<SuggestionEntry[]> => {
-  const logPath = getSuggestionsLogPath();
+  const db = getDb();
   try {
-    const file = await fs.readFile(logPath, 'utf-8');
-    const lines = file.split('\n').filter(Boolean);
-    return lines.map((line) => JSON.parse(line) as SuggestionEntry);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return [];
-    }
-    throw error;
+    const rows = db.prepare(`
+      SELECT id, automation_name as automationName, message, code, status, required_approvals as requiredApprovals, created_at as timestamp, updated_at
+      FROM suggestions
+      ORDER BY created_at DESC
+    `).all();
+
+    return rows.map((row: any) => ({
+      id: row.id,
+      timestamp: row.timestamp,
+      actionKey: '', // Not stored in DB
+      automationName: row.automationName,
+      message: row.message,
+      code: row.code,
+      status: row.status as SuggestionStatus,
+      requiredApprovals: row.requiredApprovals,
+      askAgain: undefined, // Not stored in DB
+      rationale: undefined, // Not stored in DB
+      context: undefined // Not stored in DB
+    }));
+  } finally {
+    db.close();
   }
 };
 
 export const getLatestSuggestions = async () => {
-  const entries = await readSuggestions();
-  const map = new Map<string, SuggestionEntry>();
-
-  entries.forEach((entry) => {
-    map.set(entry.id, mergeSuggestion(map.get(entry.id), entry));
-  });
-
-  return Array.from(map.values());
+  // Since we're using INSERT OR REPLACE, each id is unique and latest
+  return await readSuggestions();
 };
 
 export const getPendingSuggestions = async () => {
-  const latest = await getLatestSuggestions();
-  return latest.filter((entry) => entry.status === 'PENDING');
+  const db = getDb();
+  try {
+    const rows = db.prepare(`
+      SELECT id, automation_name as automationName, message, code, status, required_approvals as requiredApprovals, created_at as timestamp, updated_at
+      FROM suggestions
+      WHERE status = 'PENDING'
+      ORDER BY created_at DESC
+    `).all();
+
+    return rows.map((row: any) => ({
+      id: row.id,
+      timestamp: row.timestamp,
+      actionKey: '',
+      automationName: row.automationName,
+      message: row.message,
+      code: row.code,
+      status: row.status as SuggestionStatus,
+      requiredApprovals: row.requiredApprovals,
+      askAgain: undefined,
+      rationale: undefined,
+      context: undefined
+    }));
+  } finally {
+    db.close();
+  }
 };
 
 export const updateSuggestionStatus = async (id: string, status: SuggestionStatus) => {
-  const latest = await getLatestSuggestions();
-  const match = latest.find((entry) => entry.id === id);
-  if (!match) {
-    throw new Error(`Suggestion ${id} not found.`);
+  const db = getDb();
+  try {
+    const update = db.prepare(`
+      UPDATE suggestions SET status = ?, updated_at = ? WHERE id = ?
+    `);
+    const result = update.run(status, new Date().toISOString(), id);
+
+    if (result.changes === 0) {
+      throw new Error(`Suggestion ${id} not found.`);
+    }
+
+    // Return the updated suggestion
+    const row = db.prepare(`
+      SELECT id, automation_name as automationName, message, code, status, required_approvals as requiredApprovals, created_at as timestamp, updated_at
+      FROM suggestions WHERE id = ?
+    `).get(id) as any;
+
+    return {
+      id: row.id,
+      timestamp: row.timestamp,
+      actionKey: '',
+      automationName: row.automationName,
+      message: row.message,
+      code: row.code,
+      status: row.status as SuggestionStatus,
+      requiredApprovals: row.requiredApprovals,
+      askAgain: undefined,
+      rationale: undefined,
+      context: undefined
+    };
+  } finally {
+    db.close();
   }
-
-  const payload: SuggestionEntry = {
-    ...match,
-    status,
-    timestamp: new Date().toISOString(),
-    code: match.code
-  };
-
-  await appendSuggestion(payload);
-  return payload;
 };

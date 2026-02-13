@@ -5,6 +5,7 @@ import { appendLogEntry } from '../../cli/utils/storage-files';
 import { verifyDriverProposal } from './driver-verifier';
 import { addDevice } from '../../cli/utils/device-registry';
 import { readDevices } from '../../cli/utils/device-registry'; // Import readDevices
+import { saveDriver, getDriver } from '../../cli/utils/drivers';
 import { DEVICE_TEMPLATES } from './templates';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -402,18 +403,24 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                 let finalDriver = parsed;
 
                 try {
-                    const existingContent = await fs.readFile(driverPath, 'utf-8');
-                    const existingDriver = JSON.parse(existingContent);
-                    finalDriver = {
-                        ...existingDriver,
-                        actions: {
-                            ...existingDriver.actions,
-                            ...parsed.actions
-                        }
-                    };
+                    const existingDriverEntry = await getDriver(targetId);
+                    if (existingDriverEntry) {
+                        finalDriver = {
+                            ...existingDriverEntry.config as any,
+                            actions: {
+                                ...(existingDriverEntry.config as any).actions,
+                                ...parsed.actions
+                            }
+                        };
+                    }
                 } catch (err: any) {}
 
-                await fs.writeFile(driverPath, JSON.stringify(finalDriver, null, 2));
+                await saveDriver({
+                    id: targetId,
+                    device_id: targetId,
+                    config: finalDriver,
+                    created_at: new Date().toISOString()
+                });
 
                 await addDevice({
                     id: targetId,

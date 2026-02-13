@@ -1,6 +1,7 @@
-import { appendLogEntry } from '../cli/utils/storage-files';
+import { getDriver } from '../cli/utils/drivers';
 import { GenericHttpDriver, DriverResult } from '../drivers/http-generic';
 import { readDevices, addDevice, Device } from '../cli/utils/device-registry';
+import { appendLogEntry } from '../cli/utils/storage-files';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -19,15 +20,13 @@ export const dispatchAction = async (actionString: string) => {
   console.log(`[ActionDispatcher] Dispatching '${command}' to '${device}'`);
 
   try {
-    const driversDir = path.join(process.cwd(), 'logs', 'drivers');
-    const driverPath = path.join(driversDir, `${device}.json`);
+    const driverEntry = await getDriver(device);
     
     let driverConfig;
-    try {
-        const content = await fs.readFile(driverPath, 'utf-8');
-        driverConfig = JSON.parse(content);
-    } catch (e) {
-        console.warn(`[ActionDispatcher] No driver found for ${device} at ${driverPath}`);
+    if (driverEntry) {
+        driverConfig = driverEntry.config;
+    } else {
+        console.warn(`[ActionDispatcher] No driver found for ${device} in database`);
         
          await appendLogEntry({
             timestamp: new Date().toISOString(),
@@ -38,7 +37,7 @@ export const dispatchAction = async (actionString: string) => {
         return { success: false, error: 'driver_not_found' };
     }
 
-    const driver = new GenericHttpDriver(driverConfig);
+    const driver = new GenericHttpDriver(driverConfig as any);
     
     // Load device parameters (notes, config, secrets)
     let params: Record<string, any> = {};

@@ -1,6 +1,5 @@
-import { promises as fs } from 'fs';
+import Database from 'better-sqlite3';
 import path from 'path';
-import { getLogsDir } from './storage-files';
 
 export type DecisionEntry = {
   timestamp: string;
@@ -18,35 +17,61 @@ type PreferenceStats = {
   total: number;
 };
 
-const getDecisionLogPath = () => path.join(getLogsDir(), 'decisions.jsonl');
+const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
+
+const getDb = () => new Database(getDbPath());
 
 export const appendDecision = async (entry: DecisionEntry) => {
-  const logsDir = getLogsDir();
-  await fs.mkdir(logsDir, { recursive: true });
-  const payload = {
-    timestamp: entry.timestamp || new Date().toISOString(),
-    user: entry.user ?? 'default',
-    context: entry.context ?? '',
-    actionKey: entry.actionKey,
-    suggestion: entry.suggestion,
-    accepted: entry.accepted,
-    details: entry.details ?? {}
-  };
-  await fs.appendFile(getDecisionLogPath(), `${JSON.stringify(payload)}\n`);
-  return payload;
+  const db = getDb();
+  try {
+    const insert = db.prepare(`
+      INSERT INTO decisions (timestamp, user, context, action_key, suggestion, accepted, status, details)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    const result = insert.run(
+      entry.timestamp || new Date().toISOString(),
+      entry.user ?? 'default',
+      entry.context ?? '',
+      entry.actionKey,
+      entry.suggestion,
+      entry.accepted ? 1 : 0,
+      entry.status || 'APPROVED',
+      JSON.stringify(entry.details || {})
+    );
+    
+    return {
+      id: result.lastInsertRowid,
+      ...entry
+    };
+  } finally {
+    db.close();
+  }
 };
 
 export const readDecisions = async (limit = 200): Promise<DecisionEntry[]> => {
-  const logPath = getDecisionLogPath();
+  const db = getDb();
   try {
-    const file = await fs.readFile(logPath, 'utf-8');
-    const lines = file.split('\n').filter(Boolean);
-    return lines.slice(-limit).map((line) => JSON.parse(line) as DecisionEntry);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return [];
-    }
-    throw error;
+    const select = db.prepare(`
+      SELECT timestamp, user, context, action_key as actionKey, suggestion, accepted, status, details
+      FROM decisions
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `);
+    
+    const rows = select.all(limit) as any[];
+    return rows.map((row: any) => ({
+      timestamp: row.timestamp,
+      user: row.user,
+      context: row.context,
+      actionKey: row.actionKey,
+      suggestion: row.suggestion,
+      accepted: Boolean(row.accepted),
+      status: row.status,
+      details: JSON.parse(row.details || '{}')
+    }));
+  } finally {
+    db.close();
   }
 };
 
