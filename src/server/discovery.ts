@@ -60,10 +60,10 @@ const isIpAlreadyRegistered = async (ip: string): Promise<boolean> => {
 
 const DEFAULT_SCAN_PORTS = [4387, 554, 8899, 8001, 8002, 1515];
 const DEFAULT_SCAN_TIMEOUT_MS = 250;
-const DEFAULT_SCAN_CONCURRENCY = 64;
-const DEFAULT_SCAN_INTERVAL_MS = 30000; // 30 segundos (reduzido de 60s)
-const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 45000; // 45 segundos (reduzido de 90s)
-const DEFAULT_SSDP_INTERVAL_MS = 40000; // 40 segundos (reduzido de 75s)
+const DEFAULT_SCAN_CONCURRENCY = 16; // reduced from 64 to limit CPU/network pressure
+const DEFAULT_SCAN_INTERVAL_MS = 300000; // 5 minutes — devices don't appear/disappear frequently
+const DEFAULT_VENDOR_BROADCAST_INTERVAL_MS = 600000; // 10 minutes
+const DEFAULT_SSDP_INTERVAL_MS = 600000; // 10 minutes
 const DEFAULT_FINGERPRINT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_FINGERPRINT_TIMEOUT_MS = 1500;
 

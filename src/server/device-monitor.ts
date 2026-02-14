@@ -8,7 +8,7 @@ type MonitorOptions = {
   healthUrl?: string;
 };
 
-const DEFAULT_INTERVAL = 5000;
+const DEFAULT_INTERVAL = 30000; // 30s — sufficient for state tracking without overloading
 const lastStates = new Map<string, string>();
 
 const hasStateChanged = (deviceId: string, payload: unknown) => {

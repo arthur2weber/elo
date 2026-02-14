@@ -39,6 +39,13 @@ export class FaceDetectionWorker {
     private detectionInterval: NodeJS.Timeout | null = null;
     private recognitionEngine: FaceRecognitionEngine;
     private presenceDetector: any;
+    // Motion detection: store previous frame hash per camera
+    private previousFrames: Map<string, Buffer> = new Map();
+    private motionCooldown: Map<string, number> = new Map();
+    private static readonly MOTION_THRESHOLD = 0.05; // 5% pixel difference = motion
+    private static readonly MOTION_COOLDOWN_MS = 30000; // 30s cooldown after motion detection
+    private static readonly LOW_RES_WIDTH = 160; // Tiny resolution for motion detection
+    private static readonly LOW_RES_HEIGHT = 120;
 
     constructor(dbPath: string = path.join(process.cwd(), 'data', 'elo.db')) {
         this.db = new Database(dbPath);
@@ -145,14 +152,14 @@ export class FaceDetectionWorker {
         console.log('[FaceDetection] Starting face detection worker...');
         this.isRunning = true;
 
-        // Start detection loop
+        // Start detection loop — motion check every 30s, face detection only on motion
         this.detectionInterval = setInterval(async () => {
             try {
                 await this.processAllCameras();
             } catch (error) {
                 console.error('[FaceDetection] Error in detection loop:', error);
             }
-        }, 10000); // Check every 10 seconds (less frequent for now)
+        }, 30000); // Check for motion every 30 seconds
 
         console.log('[FaceDetection] Worker started successfully');
     }
@@ -180,14 +187,32 @@ export class FaceDetectionWorker {
 
     private async processCamera(camera: CameraConfig): Promise<void> {
         try {
-            // Capture frame from camera
+            // Step 1: Capture LOW-RES frame for motion detection (cheap)
+            const go2rtcBase = process.env.GO2RTC_URL || 'http://127.0.0.1:1984';
+            const lowResUrl = `${go2rtcBase}/api/frame.jpeg?src=${camera.id}&width=${FaceDetectionWorker.LOW_RES_WIDTH}&height=${FaceDetectionWorker.LOW_RES_HEIGHT}`;
+
+            const lowResBuffer = await this.captureFrame(lowResUrl, 1); // single attempt, fast
+            if (!lowResBuffer || lowResBuffer.byteLength < 500) return;
+
+            // Step 2: Check if there's motion compared to previous frame
+            const hasMotion = this.detectMotion(camera.id, lowResBuffer);
+            if (!hasMotion) return; // No motion — skip expensive face detection
+
+            // Step 3: Check cooldown — avoid spamming face detection
+            const lastMotion = this.motionCooldown.get(camera.id) || 0;
+            if (Date.now() - lastMotion < FaceDetectionWorker.MOTION_COOLDOWN_MS) return;
+            this.motionCooldown.set(camera.id, Date.now());
+
+            console.log(`[FaceDetection] Motion detected in ${camera.id}, capturing high-res frame...`);
+
+            // Step 4: Motion detected! Capture HIGH-RES frame for face recognition
             const imageBuffer = await this.captureFrame(camera.streamUrl);
             if (!imageBuffer) {
-                console.warn(`[FaceDetection] No frame captured from ${camera.id}`);
+                console.warn(`[FaceDetection] No high-res frame captured from ${camera.id}`);
                 return;
             }
 
-            // Detect faces in the frame
+            // Step 5: Run expensive face detection only now
             await this.detectFaces(imageBuffer, camera);
 
         } catch (error) {
@@ -195,8 +220,35 @@ export class FaceDetectionWorker {
         }
     }
 
-    private async captureFrame(streamUrl: string): Promise<Buffer | null> {
-        const maxRetries = 3;
+    /**
+     * Simple motion detection by comparing pixel data between frames.
+     * Uses raw buffer byte comparison for speed — no canvas needed.
+     */
+    private detectMotion(cameraId: string, currentFrame: Buffer): boolean {
+        const previousFrame = this.previousFrames.get(cameraId);
+        this.previousFrames.set(cameraId, currentFrame);
+
+        if (!previousFrame) return false; // First frame — no comparison possible
+
+        // Compare frame sizes first (fast reject if camera changed resolution)
+        if (previousFrame.byteLength !== currentFrame.byteLength) return true;
+
+        // Sample comparison: check every Nth byte for speed
+        const sampleStep = Math.max(1, Math.floor(currentFrame.byteLength / 500)); // ~500 samples
+        let diffCount = 0;
+        const totalSamples = Math.floor(currentFrame.byteLength / sampleStep);
+
+        for (let i = 0; i < currentFrame.byteLength; i += sampleStep) {
+            if (Math.abs(currentFrame[i] - previousFrame[i]) > 30) { // threshold per byte
+                diffCount++;
+            }
+        }
+
+        const diffRatio = diffCount / totalSamples;
+        return diffRatio > FaceDetectionWorker.MOTION_THRESHOLD;
+    }
+
+    private async captureFrame(streamUrl: string, maxRetries: number = 3): Promise<Buffer | null> {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 const controller = new AbortController();

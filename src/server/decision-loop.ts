@@ -19,7 +19,7 @@ export type DecisionLoopOptions = {
   automations?: string[];
 };
 
-const DEFAULT_INTERVAL = 10000;
+const DEFAULT_INTERVAL = 120000; // 2 minutes — Gemini calls are expensive, no need every 10s
 
 const MAX_PROMPT_STRING_LENGTH = 2000;
 const MAX_PROMPT_ARRAY_LENGTH = 20;
