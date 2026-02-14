@@ -17,7 +17,7 @@ type PreferenceStats = {
   total: number;
 };
 
-const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
+const getDbPath = () => process.env.ELO_DB_PATH || path.join(process.cwd(), 'data', 'elo.db');
 
 const getDb = () => new Database(getDbPath());
 

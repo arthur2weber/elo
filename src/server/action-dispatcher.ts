@@ -4,12 +4,17 @@ import { readDevices, addDevice, Device } from '../cli/utils/device-registry';
 import { appendLogEntry } from '../cli/utils/storage-files';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { applyContextualRules } from './automation_engine';
+import { updateRuleConfidence } from './rules-engine';
+import { checkPermission } from './permission-middleware';
+import { consultContextualRules } from './decision-loop';
+import { getPresenceDetector } from './presence-detector';
 
 /**
  * Parses and executes a rigorous action string like "device_name_normalized=action_name".
  * It looks for a matching driver config in `logs/drivers/`.
  */
-export const dispatchAction = async (actionString: string) => {
+export const dispatchAction = async (actionString: string, personId?: string) => {
   const [device, command] = actionString.split('=').map((s) => s.trim());
 
   if (!device || !command) {
@@ -17,7 +22,39 @@ export const dispatchAction = async (actionString: string) => {
     return { success: false, error: 'invalid_format' };
   }
 
-  console.log(`[ActionDispatcher] Dispatching '${command}' to '${device}'`);
+  console.log(`[ActionDispatcher] Dispatching '${command}' to '${device}'${personId ? ` for person ${personId}` : ''}`);
+
+  // Check permissions if personId is provided
+  if (personId) {
+    const permissionResult = await checkPermission({
+      personId,
+      deviceId: device,
+      action: command
+    });
+
+    if (!permissionResult.allowed) {
+      console.warn(`[ActionDispatcher] Permission denied: ${permissionResult.reason}`);
+
+      await appendLogEntry({
+        timestamp: new Date().toISOString(),
+        device,
+        event: 'action_blocked',
+        payload: {
+          command,
+          personId,
+          reason: permissionResult.reason
+        }
+      });
+
+      return {
+        success: false,
+        error: 'permission_denied',
+        reason: permissionResult.reason
+      };
+    }
+
+    console.log(`[ActionDispatcher] Permission granted for ${personId}`);
+  }
 
   try {
     const driverEntry = await getDriver(device);
@@ -71,7 +108,33 @@ export const dispatchAction = async (actionString: string) => {
         }
     }
 
-    const result: DriverResult = await driver.executeAction(command, params);
+    // Apply contextual rules before executing action
+    const presenceDetector = getPresenceDetector();
+    const presentPeople = presenceDetector
+      ? presenceDetector.getPresentPeople().map((p: any) => p.personId)
+      : [];
+    const ruleResult = await consultContextualRules(device, command, params, {
+      time: new Date().toTimeString().slice(0, 5),
+      day: new Date().getDay(),
+      peoplePresent: presentPeople
+    });
+    const finalParams = ruleResult.modifiedParams || params;
+
+    if (ruleResult.ruleApplied) {
+        console.log(`[ActionDispatcher] Applied contextual rule "${ruleResult.ruleApplied.name}", using modified parameters`);
+    }
+
+    const result: DriverResult = await driver.executeAction(command, finalParams);
+
+    // Update rule confidence if a rule was applied and action succeeded
+    if (ruleResult.ruleApplied && result.success) {
+        try {
+            await updateRuleConfidence(ruleResult.ruleApplied.id, true);
+            console.log(`[ActionDispatcher] Increased confidence for rule ${ruleResult.ruleApplied.id}`);
+        } catch (error) {
+            console.error('[ActionDispatcher] Failed to update rule confidence:', error);
+        }
+    }
 
     // If metadata contains a token, update the device's secrets/notes
     if (result.metadata && result.metadata.token) {

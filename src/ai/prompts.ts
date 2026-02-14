@@ -147,6 +147,8 @@ export const prompts = {
         userNotes?: string;
         identificationHint?: string;
         deviceType?: string;
+        username?: string;
+        password?: string;
     }) => {
         const typeSpecificRules: Record<string, string[]> = {
             'TV': [
@@ -259,6 +261,8 @@ export const prompts = {
             '- Matter.js (project-chip/matter.js)',
             'Use your specialized knowledge of these Node.js/TypeScript repositories to infer the exact API endpoints and JSON schemas for this device.',
             input.userNotes ? `CRITICAL USER CONTEXT: The user provided these credentials/notes: ${input.userNotes}. Use them to build authenticated URLs if needed.` : '',
+            input.username ? `CAMERA USERNAME: ${input.username}` : '',
+            input.password ? `CAMERA PASSWORD: ${input.password}` : '',
             'Do NOT generate TypeScript code. Generate a JSON configuration that a generic HTTP client can use.',
             'ALLOWED METHODS: "GET", "POST", "PUT", "DELETE", "WS" (WebSocket).',
             'SAMSUNG TIZEN EXAMPLE (FOLLOW THIS EXACT PATTERN):',

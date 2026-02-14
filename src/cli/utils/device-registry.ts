@@ -38,7 +38,7 @@ export interface Device {
 
 export type DeviceConfig = Device;
 
-const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
+const getDbPath = () => process.env.ELO_DB_PATH || path.join(process.cwd(), 'data', 'elo.db');
 
 const getDb = () => new Database(getDbPath());
 
@@ -98,14 +98,15 @@ export async function updateDevice(id: string, updates: Partial<Device>): Promis
     try {
         const setParts: string[] = [];
         const values: any[] = [];
-        if (updates.name) { setParts.push('name = ?'); values.push(updates.name); }
-        if (updates.type) { setParts.push('type = ?'); values.push(updates.type); }
-        if (updates.ip) { setParts.push('ip = ?'); values.push(updates.ip); }
-        if (updates.mac) { setParts.push('mac = ?'); values.push(updates.mac); }
-        if (updates.protocol) { setParts.push('protocol = ?'); values.push(updates.protocol); }
-        if (updates.endpoint) { setParts.push('endpoint = ?'); values.push(updates.endpoint); }
-        if (updates.secrets) { setParts.push('secrets = ?'); values.push(JSON.stringify(updates.secrets)); }
-        if (updates.config) { setParts.push('config = ?'); values.push(JSON.stringify(updates.config)); }
+        // Use !== undefined to allow setting empty strings and clearing fields
+        if (updates.name !== undefined) { setParts.push('name = ?'); values.push(updates.name); }
+        if (updates.type !== undefined) { setParts.push('type = ?'); values.push(updates.type); }
+        if (updates.ip !== undefined) { setParts.push('ip = ?'); values.push(updates.ip); }
+        if (updates.mac !== undefined) { setParts.push('mac = ?'); values.push(updates.mac); }
+        if (updates.protocol !== undefined) { setParts.push('protocol = ?'); values.push(updates.protocol); }
+        if (updates.endpoint !== undefined) { setParts.push('endpoint = ?'); values.push(updates.endpoint); }
+        if (updates.secrets !== undefined) { setParts.push('secrets = ?'); values.push(JSON.stringify(updates.secrets)); }
+        if (updates.config !== undefined) { setParts.push('config = ?'); values.push(JSON.stringify(updates.config)); }
         if (updates.notes !== undefined) { setParts.push('notes = ?'); values.push(updates.notes); }
         if (updates.brand !== undefined) { setParts.push('brand = ?'); values.push(updates.brand); }
         if (updates.model !== undefined) { setParts.push('model = ?'); values.push(updates.model); }
@@ -113,6 +114,11 @@ export async function updateDevice(id: string, updates: Partial<Device>): Promis
         if (updates.password !== undefined) { setParts.push('password = ?'); values.push(updates.password); }
         setParts.push('updated_at = ?'); values.push(new Date().toISOString());
         values.push(id);
+
+        if (setParts.length <= 1) {
+            // Only updated_at, nothing else to update
+            return;
+        }
 
         await dbRun(db, `UPDATE devices SET ${setParts.join(', ')} WHERE id = ?`, values);
     } finally {

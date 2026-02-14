@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { appendLogEntry } from '../cli/utils/storage-files';
 import { Device as DeviceConfig, readDevices } from '../cli/utils/device-registry';
+import { emitDeviceStateChanged, DeviceStateChangedEvent } from './event-bus';
 
 type MonitorOptions = {
   intervalMs?: number;
@@ -40,6 +41,15 @@ const pollDevice = async (device: DeviceConfig) => {
             event: 'heartbeat',
             payload
         });
+
+        // Emit event for state change
+        emitDeviceStateChanged({
+          deviceId: device.id,
+          oldState: lastStates.get(device.id) ? JSON.parse(lastStates.get(device.id)!) : null,
+          newState: payload,
+          timestamp: new Date().toISOString(),
+          source: 'monitor'
+        });
     }
     return;
   }
@@ -60,6 +70,15 @@ const pollDevice = async (device: DeviceConfig) => {
             event: 'status',
             payload
         });
+
+        // Emit event for state change
+        emitDeviceStateChanged({
+          deviceId: device.id,
+          oldState: lastStates.get(device.id) ? JSON.parse(lastStates.get(device.id)!) : null,
+          newState: payload,
+          timestamp: new Date().toISOString(),
+          source: 'monitor'
+        });
     }
   } catch (error) {
     // Error state is also a state change worth logging if it starts failing
@@ -75,6 +94,15 @@ const pollDevice = async (device: DeviceConfig) => {
                 room: device.room,
                 message
             }
+        });
+
+        // Emit event for error state change
+        emitDeviceStateChanged({
+          deviceId: device.id,
+          oldState: lastStates.get(device.id) ? JSON.parse(lastStates.get(device.id)!) : null,
+          newState: { error: message, name: device.name, type: device.type, room: device.room },
+          timestamp: new Date().toISOString(),
+          source: 'monitor'
         });
     }
   }

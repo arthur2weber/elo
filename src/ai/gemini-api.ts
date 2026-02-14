@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { appendAiUsageLog } from '../cli/utils/storage-files';
 
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
 const getApiKey = () => process.env.GEMINI_API_KEY;
@@ -18,6 +18,8 @@ type GeminiApiOptions = {
     thinkingBudget?: number;
     model?: string;
     maxOutputTokens?: number;
+    responseMimeType?: 'text/plain' | 'application/json';
+    responseSchema?: Record<string, unknown>;
     metadata?: GeminiRequestMetadata;
 };
 
@@ -48,8 +50,16 @@ export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptio
         temperature: 0.3,
         topP: 0.8,
         topK: 16,
-        maxOutputTokens: options.maxOutputTokens || 200
+        maxOutputTokens: options.maxOutputTokens || 2048
     };
+
+    if (options.responseMimeType) {
+        generationConfig.responseMimeType = options.responseMimeType;
+    }
+
+    if (options.responseSchema) {
+        generationConfig.responseSchema = options.responseSchema;
+    }
 
     if (typeof thinkingBudget === 'number' && !Number.isNaN(thinkingBudget)) {
         generationConfig.thinkingConfig = {
@@ -105,4 +115,24 @@ export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptio
     }
 
     return trimmed;
+};
+
+export const runGeminiApiPromptJson = async <T = any>(
+    prompt: string,
+    schema: Record<string, unknown>,
+    options: Omit<GeminiApiOptions, 'responseMimeType' | 'responseSchema'> = {}
+): Promise<T> => {
+    const response = await runGeminiApiPrompt(prompt, {
+        ...options,
+        responseMimeType: 'application/json',
+        responseSchema: schema
+    });
+
+    try {
+        return JSON.parse(response) as T;
+    } catch (error) {
+        console.error('[ELO] Failed to parse Gemini JSON response:', error);
+        console.error('[ELO] Raw response:', response);
+        throw new Error('Gemini API returned invalid JSON response');
+    }
 };

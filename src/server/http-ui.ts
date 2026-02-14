@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import AIAgent from '../ai/agent';
 import { readDevices, updateDevice, deleteDevice } from '../cli/utils/device-registry';
-import { appendRequestLog, readRecentAiUsage, readRecentLogs, readRecentRequests } from '../cli/utils/storage-files';
+import { appendRequestLog, readRecentAiUsage, readRecentLogs, readRecentRequests, appendCorrection } from '../cli/utils/storage-files';
 import type { AiUsageLogEntry } from '../cli/utils/storage-files';
 import { getLatestSuggestions, getPendingSuggestions } from '../cli/utils/suggestions';
 import { getPreferenceSummary } from '../cli/utils/preferences';
@@ -17,6 +17,9 @@ import { discoveryMetrics } from './discovery';
 import * as go2rtc from './go2rtc';
 import { registerCameraStream } from './go2rtc-sync';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import { updateRuleConfidence, getAllRules } from './rules-engine';
+import { createVoiceGateway } from './voice-gateway';
+import { DailyBriefingGenerator } from './daily-briefing';
 
 const DEFAULT_LIMIT = 50;
 const STATUS_HISTORY_LIMIT = 20;
@@ -30,6 +33,26 @@ const DEFAULT_KEYS = [
 // Simple in-memory cache for snapshots (deviceId -> {data, timestamp})
 const snapshotCache = new Map<string, { data: Buffer; contentType: string; timestamp: number }>();
 const CACHE_DURATION_MS = 30000; // 30 seconds
+
+const detectCorrection = (message: string): { isCorrection: boolean; deviceId?: string; action?: string; correctionType?: string } => {
+  const lowerMessage = message.toLowerCase().trim();
+
+  // Common correction patterns
+  const correctionPatterns = [
+    { pattern: /\b(muito|too)\s+(alto|alta|loud|quente|hot|frio|cold|claro|bright|escuro|dark|forte|strong|fraco|weak)\b/, type: 'parameter' },
+    { pattern: /\b(demais|too much|enough|pare|pára|stop)\b/, type: 'stop' },
+    { pattern: /\b(mais|more|menos|less|mais alto|louder|mais baixo|softer)\b/, type: 'adjustment' },
+    { pattern: /\b(assim está bom|that's better|perfeito|perfect)\b/, type: 'approval' }
+  ];
+
+  for (const { pattern, type } of correctionPatterns) {
+    if (pattern.test(lowerMessage)) {
+      return { isCorrection: true, correctionType: type };
+    }
+  }
+
+  return { isCorrection: false };
+};
 
 const validateCameraCredentials = async (ip: string, username: string, password: string, brand?: string): Promise<{ valid: boolean; error?: string }> => {
   // Temporary: Accept admin/admin credentials without validation for development
@@ -253,7 +276,7 @@ const buildAiUsageReport = async (limit: number) => {
   };
 };
 
-export const registerHttpUi = (app: express.Express) => {
+export const registerHttpUi = (app: express.Express, dailyBriefingGenerator?: DailyBriefingGenerator) => {
   const uiDir = resolveUiDir();
   const agent = new AIAgent();
 
@@ -334,6 +357,65 @@ export const registerHttpUi = (app: express.Express) => {
       return;
     }
 
+    // Check if this is a correction message
+    const correction = detectCorrection(message);
+    if (correction.isCorrection) {
+      try {
+        // For corrections, we need to find the last action that might need correction
+        // This is a simplified approach - in production, you'd want more sophisticated logic
+        const recentRequests = await readRecentRequests(10);
+        const lastActionRequest = recentRequests.find(r => r.payload?.action);
+
+        if (lastActionRequest && lastActionRequest.payload?.action && typeof lastActionRequest.payload.action === 'string') {
+          const actionParts = lastActionRequest.payload.action.split('=');
+          if (actionParts.length === 2) {
+            const [deviceId, action] = actionParts;
+
+            // Create a correction based on the detected type
+            let correctedParams = {};
+            if (correction.correctionType === 'stop') {
+              correctedParams = { state: 'off' };
+            } else if (correction.correctionType === 'parameter') {
+              // This would need more sophisticated parsing in production
+              correctedParams = { volume: 50, temperature: 22 }; // Default corrections
+            }
+
+            // Send correction
+            const correctionResponse = await fetch(`${req.protocol}://${req.get('host')}/api/corrections`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                deviceId,
+                action,
+                originalParams: lastActionRequest.payload?.originalParams || {},
+                correctedParams,
+                context: {
+                  time: new Date().toTimeString().slice(0, 5),
+                  day: new Date().getDay(),
+                  peoplePresent: []
+                }
+              })
+            });
+
+            if (correctionResponse.ok) {
+              res.json({
+                success: true,
+                data: {
+                  reply: 'Entendi a correção. Vou ajustar minhas ações futuras.',
+                  action: null,
+                  correction: true
+                }
+              });
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[Chat] Failed to process correction:', error);
+        // Fall through to normal chat processing
+      }
+    }
+
     try {
       const sessionKey = typeof sessionId === 'string' && sessionId.trim()
         ? sessionId.trim()
@@ -412,6 +494,84 @@ export const registerHttpUi = (app: express.Express) => {
       }
 
       res.json({ success: true, data: { reply: clamped, action: parsed ? parsed.action : null } });
+    } catch (error) {
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.post('/api/corrections', async (req, res) => {
+    const { deviceId, action, originalParams, correctedParams, context } = req.body ?? {};
+
+    if (!deviceId || typeof deviceId !== 'string') {
+      res.status(400).json({ success: false, error: 'deviceId is required and must be a string' });
+      return;
+    }
+
+    if (!action || typeof action !== 'string') {
+      res.status(400).json({ success: false, error: 'action is required and must be a string' });
+      return;
+    }
+
+    if (!originalParams || typeof originalParams !== 'object') {
+      res.status(400).json({ success: false, error: 'originalParams is required and must be an object' });
+      return;
+    }
+
+    if (!correctedParams || typeof correctedParams !== 'object') {
+      res.status(400).json({ success: false, error: 'correctedParams is required and must be an object' });
+      return;
+    }
+
+    try {
+      const correctionEntry = {
+        deviceId,
+        action,
+        originalParams,
+        correctedParams,
+        context: context || {
+          time: new Date().toTimeString().slice(0, 5), // HH:MM format
+          day: new Date().getDay(), // 0-6, Sunday=0
+          peoplePresent: []
+        },
+        timestamp: new Date().toISOString()
+      };
+
+      await appendCorrection(correctionEntry);
+
+      // Emit event for real-time processing
+      const { emitUserCorrection } = await import('./event-bus');
+      emitUserCorrection({
+        deviceId,
+        action,
+        originalParams,
+        correctedParams,
+        context: correctionEntry.context,
+        timestamp: correctionEntry.timestamp
+      });
+
+      // Penalize rules that may have caused this correction
+      try {
+        const rules = await getAllRules();
+        const relevantRules = rules.filter(rule =>
+          rule.triggerType === 'event' &&
+          rule.triggerConfig.eventType === 'device_action' &&
+          rule.triggerConfig.deviceId === deviceId &&
+          rule.triggerConfig.action === action
+        );
+
+        for (const rule of relevantRules) {
+          // Check if the rule's action matches the original params that were corrected
+          const ruleAction = rule.actions[0];
+          if (ruleAction && JSON.stringify(ruleAction.params) === JSON.stringify(originalParams)) {
+            await updateRuleConfidence(rule.id, false);
+            console.log(`[CorrectionsAPI] Decreased confidence for rule ${rule.id} due to user correction`);
+          }
+        }
+      } catch (error) {
+        console.error('[CorrectionsAPI] Failed to update rule confidence:', error);
+      }
+
+      res.json({ success: true, data: { id: 'correction-recorded' } });
     } catch (error) {
       res.status(500).json({ success: false, error: (error as Error).message });
     }
@@ -646,39 +806,14 @@ export const registerHttpUi = (app: express.Express) => {
       const { id } = req.params;
       const updates = req.body;
       
-      // Validate camera credentials if this is a camera device
-      if (updates.type === 'camera' || updates.type === 'Camera') {
-        const devices = await readDevices();
-        const existingDevice = devices.find(d => d.id === id);
-        
-        const username = updates.username || existingDevice?.username;
-        const password = updates.password || existingDevice?.password;
-        const ip = updates.ip || existingDevice?.ip;
-        const brand = updates.brand || existingDevice?.brand;
-        
-        if (username && password && ip) {
-          console.log(`[API] Validando credenciais da câmera para ${id} (${ip})`);
-          const validation = await validateCameraCredentials(ip, username, password, brand);
-          
-          if (!validation.valid) {
-            res.status(400).json({ 
-              success: false, 
-              error: `Validação de credenciais falhou: ${validation.error}`,
-              validationError: true
-            });
-            return;
-          }
-          
-          console.log(`[API] Credenciais da câmera validadas com sucesso para ${id}`);
-        }
-      }
+      await updateDevice(id, updates);
       
-      const updated = await updateDevice(id, updates);
+      // Read updated device to return
+      const devices = await readDevices();
+      const updatedDevice = devices.find(d => d.id === id);
       
       // Auto-register camera stream with go2rtc when camera is updated
       if (updates.type?.toLowerCase() === 'camera' || updates.type === 'Camera') {
-        const devices = await readDevices();
-        const updatedDevice = devices.find(d => d.id === id);
         if (updatedDevice) {
           registerCameraStream(updatedDevice).catch((e: Error) => 
             console.error(`[API] Failed to register camera stream for ${id}:`, e.message)
@@ -686,7 +821,7 @@ export const registerHttpUi = (app: express.Express) => {
         }
       }
       
-      res.json({ success: true, data: updated });
+      res.json({ success: true, data: updatedDevice, message: 'Dispositivo atualizado!' });
     } catch (error) {
       res.status(500).json({ success: false, error: (error as Error).message });
     }
@@ -756,6 +891,40 @@ export const registerHttpUi = (app: express.Express) => {
       res.status(500).json({ success: false, error: (error as Error).message });
     }
   });
+
+  // Daily Briefing endpoints (Phase 5)
+  if (dailyBriefingGenerator) {
+    app.get('/api/briefing', async (req: express.Request, res: express.Response) => {
+      try {
+        const briefing = await dailyBriefingGenerator.generateDailyBriefing();
+        res.json({ success: true, data: briefing });
+      } catch (error) {
+        res.status(500).json({ success: false, error: (error as Error).message });
+      }
+    });
+
+    app.get('/api/briefing/text', async (req: express.Request, res: express.Response) => {
+      try {
+        const briefing = await dailyBriefingGenerator.generateDailyBriefing();
+        const text = await dailyBriefingGenerator.generateBriefingText(briefing);
+        res.set('Content-Type', 'text/plain');
+        res.send(text);
+      } catch (error) {
+        res.status(500).json({ success: false, error: (error as Error).message });
+      }
+    });
+
+    app.get('/api/briefing/html', async (req: express.Request, res: express.Response) => {
+      try {
+        const briefing = await dailyBriefingGenerator.generateDailyBriefing();
+        const html = await dailyBriefingGenerator.generateBriefingHTML(briefing);
+        res.set('Content-Type', 'text/html');
+        res.send(html);
+      } catch (error) {
+        res.status(500).json({ success: false, error: (error as Error).message });
+      }
+    });
+  }
 
   app.post('/api/system/reset', async (_req: express.Request, res: express.Response) => {
     try {
@@ -832,6 +1001,10 @@ export const registerHttpUi = (app: express.Express) => {
       res.status(500).json({ success: false, error: (error as Error).message });
     }
   });
+
+  // Register voice gateway endpoints
+  const voiceGateway = createVoiceGateway();
+  app.use('/api/voice', voiceGateway);
 
   app.get('/', (_req: express.Request, res: express.Response) => {
     res.sendFile(path.join(uiDir, 'index.html'));

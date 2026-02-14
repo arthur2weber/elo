@@ -7,13 +7,37 @@ import { startDiscovery } from './discovery';
 import { loadAutomations, runAutomations } from './automation_engine';
 import { registerHttpUi } from './http-ui';
 import { syncCameraStreams } from './go2rtc-sync';
+import { PeopleRegistryService } from './people-registry';
+import { FaceDetectionWorker } from './face-detection-worker';
+import { initNotificationService } from './notification-service';
+import { initPresenceDetector } from './presence-detector';
+import { MetricsStore } from './metrics-store';
+import { BaselineCalculator } from './baseline-calculator';
+import { TrendAnalyzer } from './trend-analyzer';
+import { ProactiveSuggestions } from './proactive-suggestions';
+import { DailyBriefingGenerator } from './daily-briefing';
+import { AutomationEngineV2 } from './automation-engine-v2';
+import { initCorrelationEngine } from './correlation-engine';
+import { RuleProposer } from './rule-proposer';
+import Database from 'better-sqlite3';
+// import { createVoiceGateway } = require('./voice-gateway.js');
 
 const app = express();
 const server = createServer(app);
 
 app.use(bodyParser.json());
 
-registerHttpUi(app);
+// Register voice gateway routes
+const { createVoiceGateway } = require('./voice-gateway.js');
+const voiceRouter = createVoiceGateway();
+app.use('/api/voice', voiceRouter);
+
+// Initialize face detection worker (will be started later)
+const faceDetectionWorker = new FaceDetectionWorker();
+
+// Register people registry routes
+const peopleRegistry = new PeopleRegistryService(faceDetectionWorker);
+app.use('/api', peopleRegistry.getRouter());
 
 app.post('/events', async (req, res) => {
     const event = req.body;
@@ -28,6 +52,128 @@ const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
     await loadAutomations();
+
+    // Initialize face detection worker
+    try {
+        await faceDetectionWorker.initialize();
+        console.log('[ELO] Face detection worker initialized successfully');
+    } catch (faceErr) {
+        console.error('[ELO] Face detection initialization failed (non-fatal):', faceErr);
+    }
+
+    // Initialize notification service
+    const notificationConfig = {
+      telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+      telegramChatId: process.env.TELEGRAM_CHAT_ID,
+      enabled: process.env.TELEGRAM_NOTIFICATIONS_ENABLED === 'true'
+    };
+    initNotificationService(notificationConfig);
+
+    // Initialize presence detector
+    initPresenceDetector();
+
+    // Initialize Phase 5: Mordomo Invisível (Invisible Butler)
+    console.log('[ELO] Initializing Phase 5: Mordomo Invisível...');
+
+    // Initialize database connection for Phase 5 components
+    const dbPath = process.env.ELO_DB_PATH || './data/elo.db';
+    const db = new Database(dbPath);
+
+    // Initialize Phase 5 components
+    const metricsStore = new MetricsStore(db);
+    const baselineCalculator = new BaselineCalculator(metricsStore, db);
+    const trendAnalyzer = new TrendAnalyzer(metricsStore, db);
+    const proactiveSuggestions = new ProactiveSuggestions(trendAnalyzer, baselineCalculator, metricsStore, db);
+    const dailyBriefingGenerator = new DailyBriefingGenerator(
+      proactiveSuggestions,
+      metricsStore,
+      trendAnalyzer,
+      baselineCalculator,
+      db
+    );
+
+    // Initialize Automation Engine v2 (Phase 4)
+    const automationEngineV2 = new AutomationEngineV2(db);
+    await automationEngineV2.initialize();
+
+    console.log('[ELO] Phase 4 Automation Engine v2 initialized successfully');
+
+    // Schedule daily briefing generation (8 AM daily)
+    dailyBriefingGenerator.scheduleDailyBriefing();
+
+    console.log('[ELO] Phase 5 components initialized successfully');
+
+    // Initialize Phase 3: Correlation Engine + Rule Proposer
+    console.log('[ELO] Initializing Phase 3: Correlation Engine + Rule Proposer...');
+    const correlationEngine = initCorrelationEngine(dbPath);
+    const ruleProposer = new RuleProposer(db);
+
+    // Schedule periodic correlation analysis (every 6 hours)
+    const CORRELATION_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+    const runCorrelationCycle = async () => {
+      try {
+        console.log('[ELO] Running correlation analysis cycle...');
+        const result = await correlationEngine.analyzeCorrelations();
+        if (result.patterns.length > 0) {
+          console.log(`[ELO] Found ${result.patterns.length} correlation patterns, proposing rules...`);
+          const proposedRules = await ruleProposer.proposeRulesFromPatterns();
+          if (proposedRules.length > 0) {
+            await ruleProposer.saveProposedRules(proposedRules);
+            console.log(`[ELO] Saved ${proposedRules.length} proposed rules for review`);
+          }
+        } else {
+          console.log('[ELO] No significant correlation patterns found');
+        }
+      } catch (error) {
+        console.error('[ELO] Correlation analysis error:', error);
+      }
+    };
+
+    // Run first analysis after 5 minutes, then every 6 hours
+    setTimeout(runCorrelationCycle, 5 * 60 * 1000);
+    setInterval(runCorrelationCycle, CORRELATION_INTERVAL);
+
+    // API routes for correlation and proposed rules
+    app.get('/api/correlations', async (_req, res) => {
+      try {
+        const patterns = correlationEngine.getHighConfidencePatterns();
+        res.json({ success: true, data: patterns });
+      } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    app.get('/api/rules/proposed', async (_req, res) => {
+      try {
+        const rules = await ruleProposer.getProposedRules();
+        res.json({ success: true, data: rules });
+      } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    app.post('/api/rules/proposed/:id/approve', async (req, res) => {
+      try {
+        await ruleProposer.approveRule(Number(req.params.id));
+        res.json({ success: true });
+      } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    app.post('/api/rules/proposed/:id/reject', async (req, res) => {
+      try {
+        await ruleProposer.rejectRule(Number(req.params.id));
+        res.json({ success: true });
+      } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    console.log('[ELO] Phase 3 Correlation Engine initialized successfully');
+
+    // Register HTTP UI routes with Phase 5 components
+    registerHttpUi(app, dailyBriefingGenerator);
 
     server.listen(PORT, () => {
         console.log(`[ELO] Brain active on port ${PORT}`);
@@ -49,6 +195,11 @@ const startServer = async () => {
 
     // Register existing camera streams with go2rtc
     syncCameraStreams().catch((err: Error) => console.error('[ELO] Failed to sync camera streams:', err));
+
+    // Start face detection worker
+    faceDetectionWorker.start()
+        .then(() => console.log('[ELO] Face detection worker started'))
+        .catch((err: Error) => console.error('[ELO] Failed to start face detection:', err));
 
     const decisionEnabled = process.env.ELO_DECISION_LOOP_ENABLED !== 'false';
     if (decisionEnabled) {

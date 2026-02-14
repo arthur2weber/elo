@@ -134,7 +134,7 @@ export class GenericHttpDriver {
                     resolve({ success: true, data: 'Executed (Timeout waiting for response - No Token Captured)' });
                 }, 25000); // 25 seconds to give user time to click Allow
 
-                ws.on('message', (data) => {
+                ws.on('message', (data: WebSocket.RawData) => {
                     const msg = data.toString();
                     console.log(`[GenericHttpDriver] WebSocket received from ${this.config.deviceName}:`, msg);
                     
@@ -188,7 +188,7 @@ export class GenericHttpDriver {
                 });
             });
 
-            ws.on('close', (code) => {
+            ws.on('close', (code: number) => {
                 clearTimeout(timeout);
                 console.log(`[GenericHttpDriver] WebSocket closed with code: ${code}`);
                 // Code 1005 (No Status Received) or 1006 (Abnormal Closure) 
@@ -201,7 +201,7 @@ export class GenericHttpDriver {
                 }
             });
 
-            ws.on('error', (err) => {
+            ws.on('error', (err: Error) => {
                 clearTimeout(timeout);
                 const errorMessage = err.message || String(err) || 'Unknown WebSocket Error';
                 console.error(`[GenericHttpDriver] WS Error:`, errorMessage);
