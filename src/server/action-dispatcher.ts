@@ -4,11 +4,11 @@ import { readDevices, addDevice, Device } from '../cli/utils/device-registry';
 import { appendLogEntry } from '../cli/utils/storage-files';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { applyContextualRules } from './automation_engine';
-import { updateRuleConfidence } from './rules-engine';
-import { checkPermission } from './permission-middleware';
-import { consultContextualRules } from './decision-loop';
-import { getPresenceDetector } from './presence-detector';
+import { applyContextualRules } from './intelligence/automation_engine';
+import { updateRuleConfidence } from './intelligence/rules-engine';
+import { checkPermission } from './people/permission-middleware';
+import { consultContextualRules } from './intelligence/decision-loop';
+import { getPresenceDetector } from './people/presence-detector';
 
 /**
  * Parses and executes a rigorous action string like "device_name_normalized=action_name".

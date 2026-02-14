@@ -1,4 +1,4 @@
-import { DeviceConfig } from '../cli/utils/device-registry';
+import { DeviceConfig } from '../../cli/utils/device-registry';
 
 const collectStrings = (value: unknown, output: string[]) => {
   if (typeof value === 'string') {

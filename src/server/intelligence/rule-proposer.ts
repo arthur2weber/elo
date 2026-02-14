@@ -1,4 +1,4 @@
-import { runGeminiApiPrompt } from '../ai/gemini-api';
+import { runGeminiApiPrompt } from '../../ai/gemini-api';
 import Database from 'better-sqlite3';
 import { EventPattern } from './correlation-engine';
 

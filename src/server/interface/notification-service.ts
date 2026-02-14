@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import Database from 'better-sqlite3';
-import { getLocalDb } from './database';
+import { getLocalDb } from '../database';
 
 export interface NotificationConfig {
   telegramBotToken?: string;

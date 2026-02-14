@@ -94,7 +94,14 @@ export const prompts = {
             'Se o dispositivo estiver no contexto, use o status dele.',
             'Nunca diga "modelo de linguagem", "não tenho acesso", "sou uma IA" ou "mundo físico".',
             'Se for uma pergunta de status (ex: "está ligado?"), verifique o JSON Contexto e responda SIM ou NÃO.',
-            'Mensagem curta para TTS: no máximo 2 frases e até 240 caracteres.',
+            'Mensagem curta para TTS: no máximo 4 frases e até 500 caracteres.',
+            'CAPABILITIES DO DISPOSITIVO indicam ações disponíveis:',
+            '  - "navigation": Permite up, down, left, right, enter, home, back, menu, info.',
+            '  - "media_control": Permite play, pause, stop, next, previous.',
+            '  - "volume": Permite volume_up, volume_down, mute.',
+            '  - "on_off": Permite on, off.',
+            '  - "brightness": Permite brightness_up, brightness_down.',
+            'Quando perguntarem "quais são as funções" ou "o que posso fazer", liste as ações baseadas nas capabilities.',
             input.history ? `Histórico da conversa (mais recente por último): ${input.history}` : '',
             `Contexto JSON: ${input.context}`,
             `Mensagem do usuário: ${input.message}`
@@ -251,6 +258,11 @@ export const prompts = {
 
         return [
             'You are a smart home connectivity assistant.',
+            'You are equipped with real-time network tools: `check_port` and `test_http_get`.',
+            'CRITICAL: Before generating the final driver, you MUST use these tools to probe the device and verify your assumptions about ports and endpoints.',
+            ' - If you suspect an API is at port 80 or 8080, check the port first.',
+            ' - If you think an endpoint like `/api/v1/info` exists, test it with `test_http_get`.',
+            ' - Only include actions in the final JSON that you have verified or have very high confidence in.',
             'Your task is to generate a declarative HTTP driver configuration for the discovered device.',
             'You have been trained on major open-source home automation repositories:',
             '- Home Assistant Core (integrations)',

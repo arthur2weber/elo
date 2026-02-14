@@ -65,6 +65,19 @@ function migratePeopleRegistry() {
             )
         `);
 
+        // Add location column to existing face_detections table if it doesn't exist
+        const faceDetectionColumns = db.prepare("PRAGMA table_info(face_detections)").all();
+        const faceDetectionColumnNames = faceDetectionColumns.map((col: any) => col.name);
+        
+        if (!faceDetectionColumnNames.includes('location')) {
+            db.exec('ALTER TABLE face_detections ADD COLUMN location TEXT');
+            console.log('✅ Added location column to face_detections table');
+        }
+        if (!faceDetectionColumnNames.includes('embedding')) {
+            db.exec('ALTER TABLE face_detections ADD COLUMN embedding TEXT');
+            console.log('✅ Added embedding column to face_detections table');
+        }
+
         // Create permissions_log table for audit trail
         db.exec(`
             CREATE TABLE IF NOT EXISTS permissions_log (

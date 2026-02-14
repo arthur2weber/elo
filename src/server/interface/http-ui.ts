@@ -1,25 +1,25 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import AIAgent from '../ai/agent';
-import { readDevices, updateDevice, deleteDevice } from '../cli/utils/device-registry';
-import { appendRequestLog, readRecentAiUsage, readRecentLogs, readRecentRequests, appendCorrection } from '../cli/utils/storage-files';
-import type { AiUsageLogEntry } from '../cli/utils/storage-files';
-import { getLatestSuggestions, getPendingSuggestions } from '../cli/utils/suggestions';
-import { getPreferenceSummary } from '../cli/utils/preferences';
-import { buildDecisionContext, buildDeviceStatusHistory, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
-import { maskConfigValue, readConfig, writeConfig } from './config';
-import { dispatchAction } from './action-dispatcher';
-import { getDriver } from '../cli/utils/drivers';
-import { triggerDriverGeneration } from './generators/driver-generator';
+import AIAgent from '../../ai/agent';
+import { readDevices, updateDevice, deleteDevice } from '../../cli/utils/device-registry';
+import { appendRequestLog, readRecentAiUsage, readRecentLogs, readRecentRequests, appendCorrection } from '../../cli/utils/storage-files';
+import type { AiUsageLogEntry } from '../../cli/utils/storage-files';
+import { getLatestSuggestions, getPendingSuggestions } from '../../cli/utils/suggestions';
+import { getPreferenceSummary } from '../../cli/utils/preferences';
+import { buildDecisionContext, buildDeviceStatusHistory, buildDeviceStatusSnapshot, formatDecisionContext } from '../intelligence/decision-context';
+import { maskConfigValue, readConfig, writeConfig } from '../config';
+import { dispatchAction } from '../action-dispatcher';
+import { getDriver } from '../../cli/utils/drivers';
+import { triggerDriverGeneration } from '../generators/driver-generator';
 import axios from 'axios';
-import { discoveryMetrics } from './discovery';
-import * as go2rtc from './go2rtc';
-import { registerCameraStream } from './go2rtc-sync';
+import { discoveryMetrics } from '../discovery/discovery';
+import * as go2rtc from '../go2rtc';
+import { registerCameraStream } from '../go2rtc-sync';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import { updateRuleConfidence, getAllRules } from './rules-engine';
+import { updateRuleConfidence, getAllRules } from '../intelligence/rules-engine';
 import { createVoiceGateway } from './voice-gateway';
-import { DailyBriefingGenerator } from './daily-briefing';
+import { DailyBriefingGenerator } from '../intelligence/daily-briefing';
 
 const DEFAULT_LIMIT = 50;
 const STATUS_HISTORY_LIMIT = 20;
@@ -126,8 +126,8 @@ const stripMarkdown = (text: string) =>
 const clampChatReply = (text: string) => {
   const plain = stripMarkdown(text);
   const sentences = plain.split(/(?<=[.!?])\s+/).filter(Boolean);
-  const limited = sentences.slice(0, 2).join(' ');
-  return limited.length > 240 ? `${limited.slice(0, 237)}...` : limited;
+  const limited = sentences.slice(0, 4).join(' ');
+  return limited.length > 500 ? `${limited.slice(0, 497)}...` : limited;
 };
 
 const parseChatJson = (text: string) => {
@@ -539,7 +539,7 @@ export const registerHttpUi = (app: express.Express, dailyBriefingGenerator?: Da
       await appendCorrection(correctionEntry);
 
       // Emit event for real-time processing
-      const { emitUserCorrection } = await import('./event-bus');
+      const { emitUserCorrection } = await import('../event-bus');
       emitUserCorrection({
         deviceId,
         action,
@@ -932,7 +932,7 @@ export const registerHttpUi = (app: express.Express, dailyBriefingGenerator?: Da
       console.log('[System] Manual reset EXECUTION started...');
       console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 
-      const { getLocalDb, getKnowledgeDb } = await import('./database');
+      const { getLocalDb, getKnowledgeDb } = await import('../database');
 
       const path = await import('path');
       const fs = await import('fs');

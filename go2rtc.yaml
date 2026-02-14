@@ -15,8 +15,8 @@ streams:
     - rtsp://admin:3l37a2t3@192.168.16.103:554/onvif1#transport=udp
     - ffmpeg:rtsp://admin:3l37a2t3@192.168.16.103:554/onvif1#input=rtsp/udp#video=h264
   generic_ip_camera:
-    - rtsp://admin:3l37a2t3@192.168.16.104:554/onvif1#transport=udp
-    - ffmpeg:rtsp://admin:3l37a2t3@192.168.16.104:554/onvif1#input=rtsp/udp#video=h264
+    - rtsp://{username}:{password}@192.168.16.1:554/onvif1#transport=udp
+    - ffmpeg:rtsp://{username}:{password}@192.168.16.1:554/onvif1#input=rtsp/udp#video=h264
 
 api:
   listen: ":1984"

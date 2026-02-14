@@ -4,8 +4,8 @@
  */
 
 import Database from 'better-sqlite3';
-import { getLocalDb } from './database';
-import { Person } from '../types/index.js';
+import { getLocalDb } from '../database';
+import { Person } from '../../types/index.js';
 
 export interface RecognitionResult {
     personId: string | null;

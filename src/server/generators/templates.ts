@@ -18,7 +18,7 @@ export const DEVICE_TEMPLATES: Record<string, DeviceTemplate> = {
         id: 'samsung_tv',
         name: 'Samsung TV',
         type: 'smart_tv',
-        capabilities: ['media_control', 'volume', 'on_off'],
+        capabilities: ['media_control', 'volume', 'on_off', 'navigation'],
         actions: {
             'status': {
                 method: 'GET',

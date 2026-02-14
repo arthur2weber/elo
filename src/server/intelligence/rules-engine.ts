@@ -1,5 +1,5 @@
-import { getKnowledgeDb } from './database';
-import { appendCorrection, type CorrectionEntry } from '../cli/utils/storage-files';
+import { getKnowledgeDb } from '../database';
+import { appendCorrection, type CorrectionEntry } from '../../cli/utils/storage-files';
 
 export interface RuleCondition {
   type: 'time' | 'day' | 'people_present' | 'device_state' | 'metric';

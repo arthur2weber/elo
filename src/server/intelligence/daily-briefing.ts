@@ -1,8 +1,8 @@
-import { runGeminiApiPrompt } from '../ai/gemini-api';
+import { runGeminiApiPrompt } from '../../ai/gemini-api';
 import { ProactiveSuggestions, DailyBriefing, ProactiveSuggestion } from './proactive-suggestions';
-import { MetricsStore } from './metrics-store';
-import { TrendAnalyzer } from './trend-analyzer';
-import { BaselineCalculator } from './baseline-calculator';
+import { MetricsStore } from '../monitoring/metrics-store';
+import { TrendAnalyzer } from '../monitoring/trend-analyzer';
+import { BaselineCalculator } from '../monitoring/baseline-calculator';
 import Database from 'better-sqlite3';
 
 export interface BriefingSection {

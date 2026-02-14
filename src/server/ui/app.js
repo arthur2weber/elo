@@ -681,9 +681,11 @@ var ELO = (function () {
 
   /* ── Person Modal ───────────────────────────────────────────── */
   var currentPerson = null;
+  var pendingFace = null;
 
   function openAddPersonModal() {
     currentPerson = null;
+    pendingFace = null;
     document.getElementById('person-modal').classList.add('open');
     $('#person-modal-title').textContent = 'Nova Pessoa';
     var setVal = function (sel, val) { var el = $(sel); if (el) el.value = val || ''; };
@@ -721,6 +723,7 @@ var ELO = (function () {
   function setupFaceUpload() {
     var zone = document.getElementById('face-upload-zone');
     var fileInput = document.getElementById('face-file');
+    var cameraBtn = document.getElementById('camera-btn');
     if (!zone || !fileInput) return;
 
     zone.addEventListener('click', function () { fileInput.click(); });
@@ -734,10 +737,79 @@ var ELO = (function () {
     fileInput.addEventListener('change', function () {
       if (fileInput.files.length) uploadFace(fileInput.files[0]);
     });
+
+    // Camera functionality
+    if (cameraBtn) {
+      cameraBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        startCamera();
+      });
+    }
   }
 
-  function uploadFace(file) {
-    if (!currentPerson) return;
+  function startCamera() {
+    var cameraContainer = document.getElementById('camera-container');
+    var video = document.getElementById('camera-video');
+    var captureBtn = document.getElementById('capture-btn');
+    var cancelBtn = document.getElementById('cancel-camera-btn');
+    var canvas = document.getElementById('camera-canvas');
+
+    if (!cameraContainer || !video || !canvas) return;
+
+    // Hide upload zone and show camera
+    document.getElementById('face-upload-zone').style.display = 'none';
+    cameraContainer.style.display = 'block';
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+      .then(function (stream) {
+        video.srcObject = stream;
+        video.currentStream = stream;
+
+        captureBtn.onclick = function () {
+          capturePhoto();
+        };
+
+        cancelBtn.onclick = function () {
+          stopCamera();
+        };
+      })
+      .catch(function (err) {
+        console.error('Camera access denied:', err);
+        toast('Erro ao acessar câmera. Verifique as permissões.', 'error');
+        stopCamera();
+      });
+  }
+
+  function capturePhoto() {
+    var video = document.getElementById('camera-video');
+    var canvas = document.getElementById('camera-canvas');
+    var context = canvas.getContext('2d');
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(function (blob) {
+      uploadFace(blob);
+      stopCamera();
+    }, 'image/jpeg', 0.9);
+  }
+
+  function stopCamera() {
+    var cameraContainer = document.getElementById('camera-container');
+    var video = document.getElementById('camera-video');
+
+    if (video.currentStream) {
+      video.currentStream.getTracks().forEach(function (track) {
+        track.stop();
+      });
+    }
+
+    cameraContainer.style.display = 'none';
+    document.getElementById('face-upload-zone').style.display = 'block';
+  }
+
+  function uploadFace(fileOrBlob) {
     var preview = $('#face-preview');
     var prompt = $('#face-upload-prompt');
 
@@ -750,16 +822,22 @@ var ELO = (function () {
       }
       if (prompt) prompt.style.display = 'none';
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(fileOrBlob);
 
-    // upload
-    fetch(API + '/api/people/' + currentPerson.id + '/register-face', {
-      method: 'POST',
-      headers: { 'Content-Type': file.type || 'image/jpeg' },
-      body: file
-    }).then(function (r) { return r.json(); }).then(function (r) {
-      toast(r.message || 'Face registered!', 'success');
-    }).catch(function () { toast('Face upload failed', 'error'); });
+    // if we have a current person, upload immediately
+    if (currentPerson) {
+      fetch(API + '/api/people/' + currentPerson.id + '/register-face', {
+        method: 'POST',
+        headers: { 'Content-Type': fileOrBlob.type || 'image/jpeg' },
+        body: fileOrBlob
+      }).then(function (r) { return r.json(); }).then(function (r) {
+        toast(r.message || 'Face registered!', 'success');
+      }).catch(function () { toast('Face upload failed', 'error'); });
+    } else {
+      // store for later upload after person is created
+      pendingFace = fileOrBlob;
+      toast('Foto adicionada. Salve a pessoa para registrar o rosto.', 'info');
+    }
   }
 
   /* ── Automations & Rules ────────────────────────────────────── */
@@ -1147,6 +1225,18 @@ var ELO = (function () {
         toast(r.message || 'Pessoa salva!', 'success');
         closeModal('person-modal');
         loadPeople();
+        
+        // if we have a pending face, upload it now
+        if (pendingFace && r.data && r.data.id) {
+          fetch(API + '/api/people/' + r.data.id + '/register-face', {
+            method: 'POST',
+            headers: { 'Content-Type': pendingFace.type || 'image/jpeg' },
+            body: pendingFace
+          }).then(function (faceR) { return faceR.json(); }).then(function (faceR) {
+            toast(faceR.message || 'Face registered!', 'success');
+            pendingFace = null;
+          }).catch(function () { toast('Face upload failed', 'error'); });
+        }
       }).catch(function () { toast('Erro ao salvar', 'error'); });
     });
 

@@ -3,12 +3,12 @@ import net from 'net';
 import dgram from 'dgram';
 import fs from 'fs';
 import path from 'path';
-import { appendLogEntry } from '../cli/utils/storage-files';
-import { runGeminiPrompt } from '../ai/gemini';
-import { prompts } from '../ai/prompts';
-import { triggerDriverGeneration } from './generators/driver-generator';
-import { readDevices } from '../cli/utils/device-registry';
-import { emitDeviceDiscovered } from './event-bus';
+import { appendLogEntry } from '../../cli/utils/storage-files';
+import { runGeminiPrompt } from '../../ai/gemini';
+import { prompts } from '../../ai/prompts';
+import { triggerDriverGeneration } from '../generators/driver-generator';
+import { readDevices } from '../../cli/utils/device-registry';
+import { emitDeviceDiscovered } from '../event-bus';
 import {
   defaultBroadcastProfiles,
   defaultPortSignatures,
@@ -19,7 +19,7 @@ import {
   type VendorPluginConfig,
   type VendorPortSignature,
   type VendorBroadcastProfile
-} from '../vendors/discovery-vendors';
+} from '../../vendors/discovery-vendors';
 
 type BonjourModule = {
   Bonjour: new () => {

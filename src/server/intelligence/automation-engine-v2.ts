@@ -3,8 +3,8 @@ import path from 'path';
 import * as chokidar from 'chokidar';
 import * as cron from 'node-cron';
 import Database from 'better-sqlite3';
-import { eventBus } from './event-bus';
-import { dispatchAction } from './action-dispatcher';
+import { eventBus } from '../event-bus';
+import { dispatchAction } from '../action-dispatcher';
 import { AutomationRule } from './rule-proposer';
 
 export interface CompositeTrigger {

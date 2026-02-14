@@ -5,7 +5,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { getLocalDb, getKnowledgeDb } from './database';
+import { getLocalDb, getKnowledgeDb } from '../database';
 
 export interface EventPattern {
     id: string;

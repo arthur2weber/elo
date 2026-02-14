@@ -4,9 +4,9 @@
  */
 
 import Database from 'better-sqlite3';
-import { getLocalDb } from './database';
+import { getLocalDb } from '../database';
 import path from 'path';
-import { Person, FaceDetection } from '../types/index.js';
+import { Person, FaceDetection } from '../../types/index.js';
 import { FaceRecognitionEngine, RecognitionResult } from './face-recognition-engine.js';
 import { getPresenceDetector } from './presence-detector.js';
 

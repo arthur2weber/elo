@@ -4,9 +4,9 @@
  */
 
 import Database from 'better-sqlite3';
-import { getLocalDb } from './database';
-import { Person, PermissionCheck } from '../types/index.js';
-import { getNotificationService } from './notification-service.js';
+import { getLocalDb } from '../database';
+import { Person, PermissionCheck } from '../../types/index.js';
+import { getNotificationService } from '../interface/notification-service.js';
 
 export interface PermissionContext {
     personId?: string;

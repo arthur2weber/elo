@@ -20,7 +20,10 @@ type GeminiApiOptions = {
     maxOutputTokens?: number;
     responseMimeType?: 'text/plain' | 'application/json';
     responseSchema?: Record<string, unknown>;
+    tools?: any[];
+    toolConfig?: any;
     metadata?: GeminiRequestMetadata;
+    history?: any[];
 };
 
 const buildUrl = (modelOverride?: string) => {
@@ -34,17 +37,26 @@ const buildUrl = (modelOverride?: string) => {
 };
 
 export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptions = {}): Promise<string> => {
+    return runGeminiApiChat([{ role: 'user', parts: [{ text: prompt }] }], options);
+};
+
+export const runGeminiApiChat = async (contents: any[], options: GeminiApiOptions = {}): Promise<string> => {
     const model = getModel(options.model);
     const url = buildUrl(model);
     const thinkingBudget = options.thinkingBudget;
+    
+    // Payload construction
     const payload: Record<string, unknown> = {
-        contents: [
-            {
-                role: 'user',
-                parts: [{ text: prompt }]
-            }
-        ]
+        contents
     };
+
+    if (options.tools) {
+        payload.tools = options.tools;
+    }
+    
+    if (options.toolConfig) {
+        payload.toolConfig = options.toolConfig;
+    }
 
     const generationConfig: Record<string, unknown> = {
         temperature: 0.3,
@@ -90,7 +102,15 @@ export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptio
         ? parts.map((part: { text?: string }) => part.text).filter(Boolean).join('\n')
         : '';
 
-    if (!text) {
+    // Check for function calls - return as JSON string to keep signature
+    const functionCall = Array.isArray(parts) ? parts.find((p: any) => p.functionCall) : null;
+    if (functionCall) {
+        return JSON.stringify({
+            functionCall: functionCall.functionCall
+        });
+    }
+
+    if (!text && !functionCall) {
         throw new Error('Gemini API returned an empty response.');
     }
     const trimmed = text.trim();
@@ -102,7 +122,7 @@ export const runGeminiApiPrompt = async (prompt: string, options: GeminiApiOptio
             source: options.metadata.source,
             tags: options.metadata.tags ?? [],
             model,
-            promptChars: prompt.length,
+            promptChars: 0, // Simplified or pass payload size
             responseChars: trimmed.length,
             latencyMs,
             thinkingBudget: typeof thinkingBudget === 'number' ? thinkingBudget : null,
@@ -122,11 +142,14 @@ export const runGeminiApiPromptJson = async <T = any>(
     schema: Record<string, unknown>,
     options: Omit<GeminiApiOptions, 'responseMimeType' | 'responseSchema'> = {}
 ): Promise<T> => {
-    const response = await runGeminiApiPrompt(prompt, {
-        ...options,
-        responseMimeType: 'application/json',
-        responseSchema: schema
-    });
+    const response = await runGeminiApiChat(
+        [{ role: 'user', parts: [{ text: prompt }] }], 
+        {
+            ...options,
+            responseMimeType: 'application/json',
+            responseSchema: schema
+        }
+    );
 
     try {
         return JSON.parse(response) as T;

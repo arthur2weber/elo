@@ -1,5 +1,5 @@
 import { MetricsStore, MetricTrend, DeviceMetric } from './metrics-store';
-import { runGeminiApiPrompt } from '../ai/gemini-api';
+import { runGeminiApiPrompt } from '../../ai/gemini-api';
 import Database from 'better-sqlite3';
 
 export interface TrendAnalysis {

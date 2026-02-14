@@ -1,16 +1,16 @@
-import AIAgent from '../ai/agent';
-import { readRecentLogs, readRecentRequests } from '../cli/utils/storage-files';
-import { readAutomationFile, updateAutomationFile } from '../cli/utils/automation-files';
-import { buildPreferenceStats, getPreferenceSummary, readDecisions, shouldAutoApprove } from '../cli/utils/preferences';
-import { appendDecision } from '../cli/utils/preferences';
-import { appendSuggestion } from '../cli/utils/suggestions';
-import { readDevices } from '../cli/utils/device-registry';
-import { getDriver } from '../cli/utils/drivers';
+import AIAgent from '../../ai/agent';
+import { readRecentLogs, readRecentRequests } from '../../cli/utils/storage-files';
+import { readAutomationFile, updateAutomationFile } from '../../cli/utils/automation-files';
+import { buildPreferenceStats, getPreferenceSummary, readDecisions, shouldAutoApprove } from '../../cli/utils/preferences';
+import { appendDecision } from '../../cli/utils/preferences';
+import { appendSuggestion } from '../../cli/utils/suggestions';
+import { readDevices } from '../../cli/utils/device-registry';
+import { getDriver } from '../../cli/utils/drivers';
 import { promises as fs } from 'fs'; // Import fs
 import path from 'path'; // Import path
 import { buildDecisionContext, buildDeviceStatusHistory, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
 import { getAllRules, ContextualRule, RuleCondition } from './rules-engine';
-import { dispatchAction } from './action-dispatcher';
+import { dispatchAction } from '../action-dispatcher';
 
 export type DecisionLoopOptions = {
   intervalMs?: number;

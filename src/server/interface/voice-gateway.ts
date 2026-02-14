@@ -4,7 +4,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const FormData = require('form-data');
-import { appendAiUsageLog } from '../cli/utils/storage-files';
+import { appendAiUsageLog } from '../../cli/utils/storage-files';
 
 // Extend Express Request type for multer
 declare global {

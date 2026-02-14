@@ -1,5 +1,6 @@
 import { prompts } from '../../ai/prompts';
-import { runGeminiPrompt } from '../../ai/gemini';
+import { runGeminiPrompt, runGeminiChat } from '../../ai/gemini';
+import { DRIVER_TOOLS_DECLARATIONS, DRIVER_TOOLS_HANDLERS } from './tools';
 import { appendSuggestion } from '../../cli/utils/suggestions';
 import { appendLogEntry } from '../../cli/utils/storage-files';
 import { verifyDriverProposal } from './driver-verifier';
@@ -10,10 +11,10 @@ import { DEVICE_TEMPLATES } from './templates';
 import { promises as fs } from 'fs';
 import path from 'path';
 import axios from 'axios';
-import { probeTcpPort } from '../discovery';
+import { probeTcpPort } from '../discovery/discovery';
 import { identifyDevice } from './device-identification';
 import { DISCOVERY_MAP, PROTOCOL_REFERENCES } from './knowledge-base';
-import { discoveryMetrics } from '../discovery';
+import { discoveryMetrics } from '../discovery/discovery';
 
 interface DiscoveryPayload {
     name?: string;
@@ -417,8 +418,7 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     ...extraHints
                 ].filter(Boolean).join('\n');
 
-                console.log(`[DriverGenerator] About to call Gemini for ${targetIp}...`);
-                const rawResponse = await runGeminiPrompt(prompts.generateDriver({
+                const initialPrompt = prompts.generateDriver({
                     ip: targetIp || 'unknown',
                     port: payload.port || 0,
                     protocol: payload.protocol || payload.source,
@@ -429,28 +429,103 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     deviceType: payload.type,
                     username: payload.username,
                     password: payload.password
-                }), {
-                    maxOutputTokens: 8192,
-                    metadata: {
-                        source: 'driver:generate',
-                        tags: ['driver', 'automation'],
-                        extra: {
-                            attempt,
-                            hasTargetIp: Boolean(targetIp),
-                            protocol: payload.protocol || payload.source || 'unknown',
-                            rawInfoChars: rawInfoCompact.length,
-                            hasUserNotes: Boolean(payload.notes)
-                        }
-                    }
                 });
-                console.log(`[DriverGenerator] Gemini call completed for ${targetIp}, response length: ${rawResponse.length}`);
 
-                // 2. Parse JSON response
-                const cleanJson = rawResponse.replace(/```json\n?|\n?```/g, '').trim();
-                const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+                console.log(`[DriverGenerator] Starting interactive session for ${targetIp}...`);
+
+                // Initialize chat history with system prompt / user request
+                const chatHistory: any[] = [{ role: 'user', parts: [{ text: initialPrompt }] }];
+                const MAX_TOOL_TURNS = 5;
+                let currentTurn = 0;
+                let finalResponseText = '';
+
+                // Loop for tool usage
+                while (currentTurn < MAX_TOOL_TURNS) {
+                    currentTurn++;
+                    console.log(`[DriverGenerator] Turn ${currentTurn}/${MAX_TOOL_TURNS}`);
+
+                    // Create config with tools available
+                    const toolsConfig = { 
+                        functionDeclarations: DRIVER_TOOLS_DECLARATIONS 
+                    };
+
+                    const responseText = await runGeminiChat(chatHistory, {
+                        tools: [toolsConfig],
+                        maxOutputTokens: 8192,
+                        metadata: { 
+                            source: 'driver:generate',
+                            tags: ['driver', 'automation', 'tool-use']
+                        }
+                    });
+
+                    // Check if response is a function call (our wrapper returns JSON string for function calls)
+                    let functionCallData: any = null;
+                    try {
+                        const parsedRes = JSON.parse(responseText);
+                        if (parsedRes && parsedRes.functionCall) {
+                            functionCallData = parsedRes.functionCall;
+                        }
+                    } catch (e) {
+                         // Not JSON, so it's likely text response
+                    }
+
+                    if (functionCallData) {
+                        const { name, args } = functionCallData;
+                        console.log(`[DriverGenerator] AI requesting tool execution: ${name}`, args);
+                        
+                        // Execute tool
+                        const handler = DRIVER_TOOLS_HANDLERS[name];
+                        let toolResult = { error: 'Tool not found' };
+                        
+                        if (handler) {
+                            try {
+                                toolResult = await handler(args);
+                                console.log(`[DriverGenerator] Tool ${name} executed. Result:`, JSON.stringify(toolResult).slice(0, 100));
+                            } catch (err: any) {
+                                toolResult = { error: err.message };
+                            }
+                        }
+
+                        // Add assistant's tool call to history
+                        chatHistory.push({
+                            role: 'model',
+                            parts: [{ functionCall: functionCallData }]
+                        });
+
+                        // Add tool response to history (in format Gemini expects)
+                        chatHistory.push({
+                            role: 'function',
+                            parts: [{
+                                functionResponse: {
+                                    name: name,
+                                    response: { name: name, content: toolResult }
+                                }
+                            }]
+                        });
+                        
+                        // Continue loop to let AI process the tool result
+                        continue;
+                    } else {
+                        // It's text response (hopefully the final JSON driver)
+                        finalResponseText = responseText;
+                        break;
+                    }
+                }
+                
+                if (!finalResponseText) {
+                     // Fallback if loop ended without text (e.g. too many tool calls)
+                     console.warn('[DriverGenerator] Max turns reached without final text response.');
+                     // We might want to force a final generation here without tools if needed
+                }
+
+                console.log(`[DriverGenerator] Conversation completed for ${targetIp}, final response length: ${finalResponseText.length}`);
+
+                // 2. Parse JSON response matching generic json block
+                const cleanJson = finalResponseText.replace(/```json\n?|\n?```/g, '').trim();
+                const jsonMatch = cleanJson.match(/\{[\s\S]*\}/); // Flexible match for JSON object
                 
                 if (!jsonMatch) {
-                    console.error('[DriverGenerator] Invalid JSON Raw Response (No Match):', rawResponse);
+                    console.error('[DriverGenerator] Invalid JSON Raw Response (No Match):', finalResponseText);
                     lastError = "Invalid JSON format received from AI.";
                     continue;
                 }
@@ -458,8 +533,8 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                 try {
                     parsed = JSON.parse(jsonMatch[0]);
                 } catch (error: any) {
-                    console.error('[DriverGenerator] JSON Parse Error:', error);
-                    lastError = `JSON Parse Error: ${error.message}`;
+                    console.error('[DriverGenerator] JSON Parse Error:', error.message);
+                    lastError = "AI returned invalid JSON: " + error.message;
                     continue;
                 }
             }

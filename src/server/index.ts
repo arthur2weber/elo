@@ -1,24 +1,25 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import { createServer } from 'http';
-import { startDeviceMonitor } from './device-monitor';
-import { startDecisionLoop } from './decision-loop';
-import { startDiscovery } from './discovery';
-import { loadAutomations, runAutomations } from './automation_engine';
-import { registerHttpUi } from './http-ui';
+import { startDeviceMonitor } from './monitoring/device-monitor';
+import { startDecisionLoop } from './intelligence/decision-loop';
+import { startDiscovery } from './discovery/discovery';
+import { loadAutomations, runAutomations } from './intelligence/automation_engine';
+import { registerHttpUi } from './interface/http-ui';
 import { syncCameraStreams } from './go2rtc-sync';
-import { PeopleRegistryService } from './people-registry';
-import { FaceDetectionWorker } from './face-detection-worker';
-import { initNotificationService } from './notification-service';
-import { initPresenceDetector } from './presence-detector';
-import { MetricsStore } from './metrics-store';
-import { BaselineCalculator } from './baseline-calculator';
-import { TrendAnalyzer } from './trend-analyzer';
-import { ProactiveSuggestions } from './proactive-suggestions';
-import { DailyBriefingGenerator } from './daily-briefing';
-import { AutomationEngineV2 } from './automation-engine-v2';
-import { initCorrelationEngine } from './correlation-engine';
-import { RuleProposer } from './rule-proposer';
+import { PeopleRegistryService } from './people/people-registry';
+import { FaceDetectionWorker } from './people/face-detection-worker';
+import { initNotificationService } from './interface/notification-service';
+import { initMdnsService } from './interface/mdns-service';
+import { initPresenceDetector } from './people/presence-detector';
+import { MetricsStore } from './monitoring/metrics-store';
+import { BaselineCalculator } from './monitoring/baseline-calculator';
+import { TrendAnalyzer } from './monitoring/trend-analyzer';
+import { ProactiveSuggestions } from './intelligence/proactive-suggestions';
+import { DailyBriefingGenerator } from './intelligence/daily-briefing';
+import { AutomationEngineV2 } from './intelligence/automation-engine-v2';
+import { initCorrelationEngine } from './intelligence/correlation-engine';
+import { RuleProposer } from './intelligence/rule-proposer';
 import { getLocalDb, getKnowledgeDb, closeAllDatabases } from './database';
 // import { createVoiceGateway } = require('./voice-gateway.js');
 
@@ -28,7 +29,7 @@ const server = createServer(app);
 app.use(bodyParser.json());
 
 // Register voice gateway routes
-const { createVoiceGateway } = require('./voice-gateway.js');
+const { createVoiceGateway } = require('./interface/voice-gateway.js');
 const voiceRouter = createVoiceGateway();
 app.use('/api/voice', voiceRouter);
 
@@ -177,6 +178,9 @@ const startServer = async () => {
 
     server.listen(PORT, () => {
         console.log(`[ELO] Brain active on port ${PORT}`);
+        
+        // Announce service via mDNS
+        initMdnsService(Number(PORT));
     });
 
     const monitorEnabled = process.env.ELO_MONITOR_ENABLED !== 'false';

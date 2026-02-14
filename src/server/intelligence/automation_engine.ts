@@ -1,10 +1,10 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { eventBus } from './event-bus';
+import { eventBus } from '../event-bus';
 import { createRuleFromCorrection, getAllRules, evaluateRuleConditions, recordRuleTrigger, updateRuleConfidence } from './rules-engine';
-import { readDevices } from '../cli/utils/device-registry';
-import { dispatchAction } from './action-dispatcher';
-import { getPresenceDetector } from './presence-detector';
+import { readDevices } from '../../cli/utils/device-registry';
+import { dispatchAction } from '../action-dispatcher';
+import { getPresenceDetector } from '../people/presence-detector';
 
 export type AutomationFunction = (event: Record<string, unknown>) => Promise<void>;
 

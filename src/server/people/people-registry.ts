@@ -5,8 +5,8 @@
 
 import express from 'express';
 import Database from 'better-sqlite3';
-import { getLocalDb } from './database';
-import { Person, PersonRole, PersonRestrictions, FaceDetection, PermissionCheck } from '../types/index.js';
+import { getLocalDb } from '../database';
+import { Person, PersonRole, PersonRestrictions, FaceDetection, PermissionCheck } from '../../types/index.js';
 import { FaceDetectionWorker } from './face-detection-worker.js';
 
 interface PermissionResult {
@@ -186,7 +186,7 @@ export class PeopleRegistryService {
     private getAllPeople(): Person[] {
         const stmt = this.db.prepare(`
             SELECT id, name, role, face_embeddings, restrictions,
-                   created_at, updated_at, last_seen, last_seen_location
+                   created_at, updated_at
             FROM people
             ORDER BY name
         `);
@@ -199,16 +199,14 @@ export class PeopleRegistryService {
             faceEmbeddings: row.face_embeddings ? JSON.parse(row.face_embeddings) : null,
             restrictions: JSON.parse(row.restrictions),
             createdAt: row.created_at,
-            updatedAt: row.updated_at,
-            lastSeen: row.last_seen,
-            lastSeenLocation: row.last_seen_location
+            updatedAt: row.updated_at
         }));
     }
 
     private getPersonById(id: string): Person | null {
         const stmt = this.db.prepare(`
-            SELECT id, name, role, face_embeddings, restrictions,
-                   created_at, updated_at, last_seen, last_seen_location
+            SELECT id, name, role, face_embeddings, restrictions, preferences,
+                   created_at, updated_at
             FROM people
             WHERE id = ?
         `);
@@ -223,9 +221,7 @@ export class PeopleRegistryService {
             faceEmbeddings: row.face_embeddings ? JSON.parse(row.face_embeddings) : null,
             restrictions: JSON.parse(row.restrictions),
             createdAt: row.created_at,
-            updatedAt: row.updated_at,
-            lastSeen: row.last_seen,
-            lastSeenLocation: row.last_seen_location
+            updatedAt: row.updated_at
         };
     }
 
@@ -289,12 +285,13 @@ export class PeopleRegistryService {
         const result = stmt.run(personId, confidence, JSON.stringify(embedding), cameraId, location);
 
         // Update person's last seen
-        const updateStmt = this.db.prepare(`
-            UPDATE people
-            SET last_seen = CURRENT_TIMESTAMP, last_seen_location = ?
-            WHERE id = ?
-        `);
-        updateStmt.run(location, personId);
+        // TODO: Add last_seen columns to people table
+        // const updateStmt = this.db.prepare(`
+        //     UPDATE people
+        //     SET last_seen = CURRENT_TIMESTAMP, last_seen_location = ?
+        //     WHERE id = ?
+        // `);
+        // updateStmt.run(location, personId);
 
         return {
             personId,

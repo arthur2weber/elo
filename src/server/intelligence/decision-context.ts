@@ -1,6 +1,6 @@
-import { getLocalDb } from './database';
-import { RequestLogEntry, readRecentRequests } from '../cli/utils/storage-files';
-import { DeviceConfig } from '../cli/utils/device-registry';
+import { getLocalDb } from '../database';
+import { RequestLogEntry, readRecentRequests } from '../../cli/utils/storage-files';
+import { DeviceConfig } from '../../cli/utils/device-registry';
 
 export type DeviceStatusSnapshot = {
   device: string;

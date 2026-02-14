@@ -4,7 +4,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { getLocalDb } from './database';
+import { getLocalDb } from '../database';
 
 export interface PresenceState {
     personId: string;

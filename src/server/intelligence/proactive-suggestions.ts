@@ -1,7 +1,7 @@
-import { runGeminiApiPrompt } from '../ai/gemini-api';
-import { TrendAnalyzer, DegradationAlert } from './trend-analyzer';
-import { BaselineCalculator, BaselineAlert } from './baseline-calculator';
-import { MetricsStore } from './metrics-store';
+import { runGeminiApiPrompt } from '../../ai/gemini-api';
+import { TrendAnalyzer, DegradationAlert } from '../monitoring/trend-analyzer';
+import { BaselineCalculator, BaselineAlert } from '../monitoring/baseline-calculator';
+import { MetricsStore } from '../monitoring/metrics-store';
 import Database from 'better-sqlite3';
 
 export interface ProactiveSuggestion {
