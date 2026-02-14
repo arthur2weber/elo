@@ -1,240 +1,366 @@
 <!DOCTYPE html>
 <html lang="pt-br">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ELO Console</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header class="header">
-      <div>
-        <h1>ELO Console</h1>
-        <p>Visão geral, chat e configurações rápidas.</p>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ELO — Smart Home Intelligence</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="16" r="6" fill="currentColor" opacity="0.3"/><circle cx="16" cy="16" r="2" fill="currentColor"/></svg>
       </div>
-      <div class="status" id="status-badge">Conectando...</div>
-    </header>
-
-    <nav class="tabs">
-      <button class="tab active" data-tab="overview">Visão</button>
-      <button class="tab" data-tab="chat">Chat</button>
-      <button class="tab" data-tab="devices">Dispositivos</button>
-      <button class="tab" data-tab="discovery">Descoberta</button>
-      <button class="tab" data-tab="config">Keys</button>
-      <button class="tab" data-tab="suggestions">Sugestões</button>
-      <button class="tab" data-tab="system" style="margin-left: auto; color: #ef4444">Sistema</button>
-    </nav>
-
-    <main>
-      <section class="panel active" id="panel-overview">
-        <div class="grid">
-          <div class="card">
-            <h3>Resumo</h3>
-            <div id="overview-summary" class="muted">Carregando...</div>
-          </div>
-          <div class="card">
-            <h3>Preferências</h3>
-            <pre id="overview-preferences" class="code-block">Carregando...</pre>
-          </div>
-          <div class="card">
-            <h3>Consumo de IA</h3>
-            <div id="overview-ai-summary" class="muted">Carregando...</div>
-            <div class="ai-tag-breakdown">
-              <h4>Principais tags</h4>
-              <div id="overview-ai-tags" class="muted">Carregando...</div>
-            </div>
-            <h4>Chamadas recentes</h4>
-            <pre id="overview-ai-recent" class="code-block">Carregando...</pre>
-          </div>
-        </div>
-        <div class="card">
-          <h3>Eventos recentes</h3>
-          <pre id="overview-events" class="code-block">Carregando...</pre>
-        </div>
-      </section>
-
-      <section class="panel" id="panel-chat">
-        <div class="card">
-          <h3>Fale com o ELO</h3>
-          <div id="chat-thread" class="chat-thread"></div>
-          <form id="chat-form" class="chat-form">
-            <input id="chat-input" placeholder="Digite sua pergunta" autocomplete="off" />
-            <button type="submit">Enviar</button>
-          </form>
-          <p class="muted">As mensagens são registradas em logs e podem alimentar o loop de decisão.</p>
-        </div>
-      </section>
-
-      <section class="panel" id="panel-devices">
-        <div class="card">
-          <h3>Dispositivos cadastrados</h3>
-          <div id="devices-list" class="list"></div>
-        </div>
-        <div class="card">
-          <h3>Último status</h3>
-          <pre id="devices-status" class="code-block">Carregando...</pre>
-        </div>
-      </section>
-
-      <section class="panel" id="panel-discovery">
-        <div class="card">
-          <h3>Descobertas recentes</h3>
-          <pre id="discovery-list" class="code-block">Carregando...</pre>
-        </div>
-      </section>
-
-      <section class="panel" id="panel-config">
-        <div class="card">
-          <h3>Chaves e variáveis</h3>
-          <div id="config-status" class="list"></div>
-          <form id="config-form" class="config-form">
-            <label>
-              GEMINI_API_KEY
-              <input name="GEMINI_API_KEY" placeholder="Cole a chave" type="password" />
-            </label>
-            <label>
-              GEMINI_API_BASE_URL
-              <input name="GEMINI_API_BASE_URL" placeholder="https://generativelanguage.googleapis.com/v1beta" />
-            </label>
-            <label>
-              GEMINI_API_MODEL
-              <input name="GEMINI_API_MODEL" placeholder="gemini-2.5-flash" />
-            </label>
-            <label>
-              THINKING_BUDGET
-              <input name="THINKING_BUDGET" placeholder="-1" />
-            </label>
-            <button type="submit">Salvar configuração</button>
-          </form>
-          <p class="muted">Após salvar, reinicie o servidor para aplicar novas variáveis.</p>
-        </div>
-      </section>
-
-      <section class="panel" id="panel-suggestions">
-        <div class="card">
-          <h3>Sugestões recentes</h3>
-          <pre id="suggestions-list" class="code-block">Carregando...</pre>
-        </div>
-      </section>
-
-      <section class="panel" id="panel-system">
-        <div class="card" style="border-color: #ef4444">
-          <h3 style="color: #ef4444">Zona de Perigo</h3>
-          <p class="muted">Ações irreversíveis do sistema.</p>
-          <div style="margin-top: 24px; padding: 24px; background: rgba(239, 68, 68, 0.1); border-radius: 12px; border: 1px dashed #ef4444">
-            <h4>Reset Total</h4>
-            <p style="font-size: 13px; margin-bottom: 16px;">Isso apagará todos os dispositivos pareados, logs de eventos e drivers gerados pela IA.</p>
-            <button id="reset-system-btn" style="width: 100%; padding: 12px; font-weight: bold; cursor: pointer; border: 1px solid #ef4444; background: #ef4444; color: white; border-radius: 8px;">LIMPAR TODO O SISTEMA</button>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <div id="device-modal" class="modal">
-      <div class="modal-content">
-        <div class="modal-tabs">
-          <div class="modal-tab active" data-tab="settings">Configurações</div>
-          <div id="tab-controls-btn" class="modal-tab" data-tab="controls">Controles</div>
-        </div>
-
-        <div id="modal-panel-settings" class="modal-panel active">
-          <form id="device-edit-form" class="config-form" style="margin-top: 0;">
-            <input type="hidden" id="edit-device-id" />
-            <div id="edit-device-hint" class="muted" style="margin-bottom: 12px; font-size: 12px; color: #facc15"></div>
-            
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <label>
-                Nome
-                <input type="text" id="edit-device-name" />
-              </label>
-              <label>
-                Local (Cômodo)
-                <input type="text" id="edit-device-room" />
-              </label>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <label>
-                Tipo
-                <input type="text" id="edit-device-type" />
-              </label>
-              <label>
-                IP
-                <input type="text" id="edit-device-ip" />
-              </label>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <label>
-                Marca
-                <input type="text" id="edit-device-brand" placeholder="ex: Hikvision, TP-Link" />
-              </label>
-              <label>
-                Modelo
-                <input type="text" id="edit-device-model" placeholder="ex: DS-2CD2032F-I" />
-              </label>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <label>
-                Usuário
-                <input type="text" id="edit-device-username" placeholder="ex: admin" />
-              </label>
-              <label>
-                Senha
-                <input type="password" id="edit-device-password" placeholder="ex: admin123" />
-              </label>
-            </div>
-
-            <label>
-              Endpoint (URL de Controle)
-              <input type="text" id="edit-device-endpoint" />
-            </label>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-              <label>
-                Protocolo
-                <input type="text" id="edit-device-protocol" />
-              </label>
-              <label>
-                Integração
-                <select id="edit-device-status" style="display: block; width: 100%; margin-top: 4px; padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px;">
-                  <option value="ready">Pronto (Ready)</option>
-                  <option value="pending">Pendente (Pending)</option>
-                  <option value="unknown">Desconhecido (Unknown)</option>
-                </select>
-              </label>
-            </div>
-
-            <label id="edit-notes-label">
-              Credenciais / Notas (JSON ou Texto)
-              <textarea id="edit-device-notes" rows="3" style="display: block; width: 100%; margin-top: 4px; padding: 8px; background: var(--bg-main); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; font-family: monospace;" placeholder='{"user": "admin", "pass": "123"}'></textarea>
-            </label>
-
-            <div class="modal-actions">
-              <button type="button" class="btn-small" onclick="closeDeviceModal()">Cancelar</button>
-              <button type="button" id="btn-regenerate" class="btn-small" style="background: rgba(42, 195, 255, 0.1); border-color: var(--accent-cyan); color: var(--accent-cyan)">Recriar Driver (IA)</button>
-              <button type="submit">Salvar Alterações</button>
-            </div>
-          </form>
-        </div>
-
-        <div id="modal-panel-controls" class="modal-panel">
-          <div id="device-controls-container">
-            <!-- Dynamic content based on type -->
-            <p class="muted">Carregando controles...</p>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn-small" onclick="closeDeviceModal()">Fechar</button>
-          </div>
-        </div>
+      <div class="brand-text">
+        <span class="brand-name">ELO</span>
+        <span class="brand-sub">Intelligence</span>
       </div>
     </div>
 
-    <footer class="footer">
-      <div id="reset-trigger" style="opacity: 0.05; cursor: pointer; font-size: 10px; margin-top: 40px; text-align: center;">ELO_PURGE_v1.0</div>
-    </footer>
+    <nav class="sidebar-nav">
+      <div class="nav-group">
+        <span class="nav-label">Principal</span>
+        <a class="nav-item active" data-page="dashboard" href="#dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="4" rx="1"/><rect x="3" y="14" width="7" height="4" rx="1"/><rect x="14" y="11" width="7" height="7" rx="1"/></svg>
+          <span>Dashboard</span>
+        </a>
+        <a class="nav-item" data-page="devices" href="#devices">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
+          <span>Dispositivos</span>
+          <span class="nav-badge" id="nav-device-count">0</span>
+        </a>
+        <a class="nav-item" data-page="chat" href="#chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Chat IA</span>
+        </a>
+      </div>
 
-    <script src="/app.js"></script>
-  </body>
+      <div class="nav-group">
+        <span class="nav-label">Inteligencia</span>
+        <a class="nav-item" data-page="people" href="#people">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span>Pessoas &amp; Rostos</span>
+        </a>
+        <a class="nav-item" data-page="automations" href="#automations">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span>Automacoes</span>
+        </a>
+        <a class="nav-item" data-page="correlations" href="#correlations">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.12 8.12L15.88 15.88"/><circle cx="18" cy="6" r="3"/><path d="M15.88 8.12L8.12 15.88"/></svg>
+          <span>Correlacoes</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">Servicos</span>
+        <a class="nav-item" data-page="voice" href="#voice">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          <span>Voz</span>
+        </a>
+        <a class="nav-item" data-page="discovery" href="#discovery">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span>Descoberta</span>
+        </a>
+        <a class="nav-item" data-page="briefing" href="#briefing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span>Briefing</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <span class="nav-label">Sistema</span>
+        <a class="nav-item" data-page="settings" href="#settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Configuracoes</span>
+        </a>
+        <a class="nav-item nav-danger" data-page="system" href="#system">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>Sistema</span>
+        </a>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="status-pill" id="connection-status">
+        <span class="status-dot"></span>
+        <span class="status-text">Conectando...</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Mobile Header -->
+  <header class="mobile-header" id="mobile-header">
+    <button class="menu-toggle" id="menu-toggle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <span class="mobile-title">ELO</span>
+    <div class="status-pill small" id="mobile-status">
+      <span class="status-dot"></span>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content" id="main-content">
+
+    <!-- DASHBOARD -->
+    <section class="page active" id="page-dashboard">
+      <div class="page-header">
+        <div><h1 class="page-title">Dashboard</h1><p class="page-subtitle">Visao geral do sistema ELO</p></div>
+        <div class="page-actions">
+          <button class="btn btn-ghost" onclick="ELO.refreshAll()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Atualizar
+          </button>
+        </div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><circle cx="12" cy="20" r="1"/></svg></div><div class="kpi-info"><span class="kpi-value" id="kpi-devices">&mdash;</span><span class="kpi-label">Dispositivos</span></div></div>
+        <div class="kpi-card"><div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><div class="kpi-info"><span class="kpi-value" id="kpi-people">&mdash;</span><span class="kpi-label">Pessoas</span></div></div>
+        <div class="kpi-card"><div class="kpi-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div class="kpi-info"><span class="kpi-value" id="kpi-events">&mdash;</span><span class="kpi-label">Eventos (24h)</span></div></div>
+        <div class="kpi-card"><div class="kpi-icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></div><div class="kpi-info"><span class="kpi-value" id="kpi-ai">&mdash;</span><span class="kpi-label">Chamadas IA</span></div></div>
+      </div>
+      <div class="dashboard-grid">
+        <div class="card card-tall"><div class="card-header"><h3>Eventos Recentes</h3><span class="badge" id="events-count">0</span></div><div class="card-body scroll-y"><div class="event-list" id="dashboard-events"><div class="empty-state small">Carregando...</div></div></div></div>
+        <div class="card"><div class="card-header"><h3>Consumo de IA</h3></div><div class="card-body"><div id="dashboard-ai-stats"><div class="empty-state small">Carregando...</div></div></div></div>
+        <div class="card"><div class="card-header"><h3>Preferencias Aprendidas</h3></div><div class="card-body"><pre class="code-block compact" id="dashboard-preferences">Carregando...</pre></div></div>
+        <div class="card"><div class="card-header"><h3>Top Correlacoes</h3><a class="link-btn" onclick="ELO.navigate('correlations')">Ver todas &rarr;</a></div><div class="card-body"><div id="dashboard-correlations"><div class="empty-state small">Carregando...</div></div></div></div>
+      </div>
+    </section>
+
+    <!-- DEVICES -->
+    <section class="page" id="page-devices">
+      <div class="page-header">
+        <div><h1 class="page-title">Dispositivos</h1><p class="page-subtitle">Gerencie todos os dispositivos da sua rede</p></div>
+        <div class="page-actions">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="device-search" placeholder="Buscar dispositivo..." oninput="ELO.filterDevices(this.value)" />
+          </div>
+        </div>
+      </div>
+      <div class="device-grid" id="devices-grid"><div class="empty-state">Carregando...</div></div>
+    </section>
+
+    <!-- CHAT -->
+    <section class="page" id="page-chat">
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-welcome">
+            <div class="chat-welcome-icon">
+              <svg viewBox="0 0 32 32" fill="none" width="48" height="48"><circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="16" r="6" fill="currentColor" opacity="0.2"/><circle cx="16" cy="16" r="2" fill="currentColor"/></svg>
+            </div>
+            <h3>Ola! Sou o ELO</h3>
+            <p>Pergunte sobre dispositivos, peca automacoes, ou converse naturalmente sobre sua casa.</p>
+            <div class="quick-prompts">
+              <button class="quick-prompt" onclick="ELO.sendChat('Quais dispositivos estao online?')">Status dos dispositivos</button>
+              <button class="quick-prompt" onclick="ELO.sendChat('Resuma os eventos das ultimas horas')">Resumo de eventos</button>
+              <button class="quick-prompt" onclick="ELO.sendChat('Sugira automacoes para minha casa')">Sugerir automacoes</button>
+            </div>
+          </div>
+        </div>
+        <form class="chat-input-area" id="chat-form">
+          <div class="chat-input-wrapper">
+            <input type="text" id="chat-input" placeholder="Digite sua mensagem..." autocomplete="off" />
+            <button type="submit" class="chat-send-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- PEOPLE -->
+    <section class="page" id="page-people">
+      <div class="page-header">
+        <div><h1 class="page-title">Pessoas &amp; Reconhecimento Facial</h1><p class="page-subtitle">Cadastre rostos para reconhecimento automatico</p></div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="ELO.openAddPersonModal()">+ Nova Pessoa</button>
+        </div>
+      </div>
+      <div class="people-grid" id="people-grid">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <p>Nenhuma pessoa cadastrada</p>
+          <button class="btn btn-primary" onclick="ELO.openAddPersonModal()">Cadastrar primeira pessoa</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- AUTOMATIONS -->
+    <section class="page" id="page-automations">
+      <div class="page-header">
+        <div><h1 class="page-title">Automacoes &amp; Regras</h1><p class="page-subtitle">Regras propostas pela IA e sugestoes</p></div>
+      </div>
+      <div class="auto-tabs">
+        <button class="auto-tab active" data-auto-tab="proposed">Propostas pela IA</button>
+        <button class="auto-tab" data-auto-tab="suggestions">Sugestoes</button>
+      </div>
+      <div class="auto-panel active" id="auto-panel-proposed">
+        <div id="proposed-rules-list"><div class="empty-state"><p>Nenhuma regra proposta ainda</p><span class="text-muted">O ELO analisa correlacoes e propoe regras automaticamente</span></div></div>
+      </div>
+      <div class="auto-panel" id="auto-panel-suggestions">
+        <div id="suggestions-list"><div class="empty-state">Carregando...</div></div>
+      </div>
+    </section>
+
+    <!-- CORRELATIONS -->
+    <section class="page" id="page-correlations">
+      <div class="page-header">
+        <div><h1 class="page-title">Correlacoes</h1><p class="page-subtitle">Padroes descobertos pela analise de eventos</p></div>
+      </div>
+      <div id="correlations-list"><div class="empty-state"><p>Nenhuma correlacao encontrada</p><span class="text-muted">A analise roda a cada 6 horas</span></div></div>
+    </section>
+
+    <!-- VOICE -->
+    <section class="page" id="page-voice">
+      <div class="page-header">
+        <div><h1 class="page-title">Controle por Voz</h1><p class="page-subtitle">STT, TTS e wake word</p></div>
+      </div>
+      <div class="voice-grid">
+        <div class="card"><div class="card-header"><h3>Status dos Servicos</h3></div><div class="card-body"><div id="voice-status"><div class="empty-state small">Verificando...</div></div></div></div>
+        <div class="card"><div class="card-header"><h3>Speech to Text</h3></div><div class="card-body">
+          <p class="text-muted mb-3">Envie um audio para transcricao</p>
+          <div class="upload-zone" id="stt-upload-zone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg><p>Arraste ou clique para enviar</p><input type="file" id="stt-file" accept="audio/*" hidden /></div>
+          <div id="stt-result" style="display:none"><h4>Transcricao</h4><pre class="code-block" id="stt-text"></pre></div>
+        </div></div>
+        <div class="card"><div class="card-header"><h3>Text to Speech</h3></div><div class="card-body">
+          <p class="text-muted mb-3">Texto para o ELO falar</p>
+          <form id="tts-form"><textarea id="tts-text-input" rows="3" placeholder="Digite o texto..."></textarea><button type="submit" class="btn btn-primary mt-2">Sintetizar</button></form>
+          <div id="tts-result" style="display:none"><audio controls id="tts-audio" class="tts-player"></audio></div>
+        </div></div>
+        <div class="card"><div class="card-header"><h3>Pipeline Completo</h3></div><div class="card-body">
+          <p class="text-muted mb-3">Audio - Transcricao - IA - Resposta</p>
+          <div class="upload-zone" id="voice-pipeline-zone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><p>Envie audio para pipeline completo</p><input type="file" id="voice-pipeline-file" accept="audio/*" hidden /></div>
+          <div id="voice-pipeline-result" style="display:none"><div id="pipeline-steps"></div></div>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- DISCOVERY -->
+    <section class="page" id="page-discovery">
+      <div class="page-header"><div><h1 class="page-title">Descoberta de Rede</h1><p class="page-subtitle">Dispositivos encontrados automaticamente</p></div></div>
+      <div id="discovery-items"><div class="empty-state">Carregando...</div></div>
+    </section>
+
+    <!-- BRIEFING -->
+    <section class="page" id="page-briefing">
+      <div class="page-header">
+        <div><h1 class="page-title">Briefing Diario</h1><p class="page-subtitle">Resumo gerado pela IA</p></div>
+        <div class="page-actions"><button class="btn btn-primary" onclick="ELO.loadBriefing()">Gerar Briefing</button></div>
+      </div>
+      <div class="card"><div class="card-body"><div id="briefing-content" class="briefing-content"><div class="empty-state"><p>Clique em "Gerar Briefing"</p></div></div></div></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="page-settings">
+      <div class="page-header"><div><h1 class="page-title">Configuracoes</h1><p class="page-subtitle">Chaves de API e variaveis</p></div></div>
+      <div class="settings-grid">
+        <div class="card"><div class="card-header"><h3>Status Atual</h3></div><div class="card-body"><div id="config-status-list" class="config-list"></div></div></div>
+        <div class="card"><div class="card-header"><h3>Atualizar</h3></div><div class="card-body">
+          <form id="config-form" class="settings-form">
+            <div class="form-group"><label>GEMINI_API_KEY</label><input type="password" name="GEMINI_API_KEY" placeholder="Cole a chave" /></div>
+            <div class="form-group"><label>GEMINI_API_BASE_URL</label><input type="text" name="GEMINI_API_BASE_URL" placeholder="https://generativelanguage.googleapis.com/v1beta" /></div>
+            <div class="form-row"><div class="form-group"><label>GEMINI_API_MODEL</label><input type="text" name="GEMINI_API_MODEL" placeholder="gemini-2.5-flash" /></div><div class="form-group"><label>THINKING_BUDGET</label><input type="text" name="THINKING_BUDGET" placeholder="-1" /></div></div>
+            <button type="submit" class="btn btn-primary">Salvar</button>
+          </form>
+        </div></div>
+      </div>
+    </section>
+
+    <!-- SYSTEM -->
+    <section class="page" id="page-system">
+      <div class="page-header"><div><h1 class="page-title" style="color:var(--red)">Zona de Perigo</h1><p class="page-subtitle">Acoes irreversiveis</p></div></div>
+      <div class="card card-danger">
+        <div class="card-header"><h3>Reset Total</h3></div>
+        <div class="card-body">
+          <p class="text-muted mb-3">Apaga TODOS os dados: dispositivos, eventos, drivers, pessoas e rostos.</p>
+          <button class="btn btn-danger" id="reset-system-btn">LIMPAR TODO O SISTEMA</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Device Modal -->
+  <div class="modal-overlay" id="device-modal">
+    <div class="modal-container modal-lg">
+      <div class="modal-header">
+        <h2 id="device-modal-title">Dispositivo</h2>
+        <button class="modal-close" onclick="ELO.closeModal('device-modal')">&times;</button>
+      </div>
+      <div class="modal-tabs-bar">
+        <button class="mtab active" data-mtab="settings">Configuracoes</button>
+        <button class="mtab" data-mtab="controls">Controles</button>
+      </div>
+      <div class="modal-body">
+        <div class="mtab-content active" id="device-tab-settings">
+          <form id="device-edit-form">
+            <input type="hidden" id="edit-device-id" />
+            <div id="edit-device-hint" class="hint-box"></div>
+            <div class="form-row"><div class="form-group"><label>Nome</label><input type="text" id="edit-device-name" /></div><div class="form-group"><label>Local</label><input type="text" id="edit-device-room" /></div></div>
+            <div class="form-row"><div class="form-group"><label>Tipo</label><input type="text" id="edit-device-type" /></div><div class="form-group"><label>IP</label><input type="text" id="edit-device-ip" /></div></div>
+            <div class="form-row"><div class="form-group"><label>Marca</label><input type="text" id="edit-device-brand" /></div><div class="form-group"><label>Modelo</label><input type="text" id="edit-device-model" /></div></div>
+            <div class="form-row"><div class="form-group"><label>Usuario</label><input type="text" id="edit-device-username" /></div><div class="form-group"><label>Senha</label><input type="password" id="edit-device-password" /></div></div>
+            <div class="form-group"><label>Endpoint</label><input type="text" id="edit-device-endpoint" /></div>
+            <div class="form-row"><div class="form-group"><label>Protocolo</label><input type="text" id="edit-device-protocol" /></div><div class="form-group"><label>Integracao</label><select id="edit-device-status"><option value="ready">Pronto</option><option value="pending">Pendente</option><option value="unknown">Desconhecido</option></select></div></div>
+            <div class="form-group"><label>Notas (JSON/Texto)</label><textarea id="edit-device-notes" rows="3"></textarea></div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-ghost" onclick="ELO.closeModal('device-modal')">Cancelar</button>
+              <button type="button" class="btn btn-accent" id="btn-regenerate">Recriar Driver</button>
+              <button type="submit" class="btn btn-primary">Salvar</button>
+            </div>
+          </form>
+        </div>
+        <div class="mtab-content" id="device-tab-controls">
+          <div id="device-controls-container"><div class="empty-state small">Selecione um dispositivo</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Person Modal -->
+  <div class="modal-overlay" id="person-modal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h2 id="person-modal-title">Nova Pessoa</h2>
+        <button class="modal-close" onclick="ELO.closeModal('person-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="person-form">
+          <input type="hidden" id="person-edit-id" />
+          <div class="form-group"><label>Nome</label><input type="text" id="person-name" required placeholder="Nome completo" /></div>
+          <div class="form-group"><label>Papel</label><select id="person-role" required><option value="">Selecione...</option><option value="admin">Administrador</option><option value="adult">Adulto</option><option value="child">Crianca</option><option value="guest">Convidado</option></select></div>
+          <div class="form-group"><label>Restricoes (opcional)</label><textarea id="person-restrictions" rows="2" placeholder="Ex: sem TV apos 21h"></textarea></div>
+          <div class="face-section">
+            <h4>Registro Facial</h4>
+            <p class="text-muted">Foto clara do rosto para reconhecimento automatico</p>
+            <div class="face-upload-zone" id="face-upload-zone">
+              <div id="face-preview" class="face-preview-img"></div>
+              <div id="face-upload-prompt" class="face-prompt">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <p>Arraste ou clique</p><span>JPG/PNG - rosto visivel</span>
+              </div>
+              <input type="file" id="face-file" accept="image/*" hidden />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-ghost" onclick="ELO.closeModal('person-modal')">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/app.js"></script>
+</body>
 </html>

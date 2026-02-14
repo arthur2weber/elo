@@ -9,6 +9,8 @@ import { getDriver } from '../cli/utils/drivers';
 import { promises as fs } from 'fs'; // Import fs
 import path from 'path'; // Import path
 import { buildDecisionContext, buildDeviceStatusHistory, buildDeviceStatusSnapshot, formatDecisionContext } from './decision-context';
+import { getAllRules, ContextualRule, RuleCondition } from './rules-engine';
+import { dispatchAction } from './action-dispatcher';
 
 export type DecisionLoopOptions = {
   intervalMs?: number;
@@ -76,7 +78,7 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
   const automations = options.automations ?? parseAutomations();
 
   if (automations.length === 0) {
-    console.warn('Decision loop disabled: no automations configured (ELO_DECISION_AUTOMATIONS).');
+    console.log('[DecisionLoop] No ELO_DECISION_AUTOMATIONS configured - proactive AI suggestions disabled. Contextual rules still active via action-dispatcher.');
     return () => undefined;
   }
 
@@ -87,6 +89,7 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
     const preferenceSummary = await getPreferenceSummary();
     const preferenceStats = buildPreferenceStats(await readDecisions(200));
     const devices = await readDevices();
+    const rules = await getAllRules();
 
     // Enrich devices with capabilities from driver database
     const devicesWithCapabilities = await Promise.all(devices.map(async (device) => {
@@ -110,14 +113,21 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
     const structuredContext = await buildDecisionContext(devicesWithCapabilities);
     const sanitizedStructuredContext = sanitizeForPrompt(structuredContext) as typeof structuredContext;
     const decisionContext = formatDecisionContext(sanitizedStructuredContext);
-  const trimmedPreferenceSummary = truncateString(preferenceSummary ?? '');
+    const trimmedPreferenceSummary = truncateString(preferenceSummary ?? '');
+
+    // Include contextual rules in decision context
+    const rulesContext = rules.length > 0
+      ? `\nActive Contextual Rules:\n${rules.map(rule =>
+          `- ${rule.name}: ${rule.description} (confidence: ${(rule.confidence * 100).toFixed(0)}%, conditions: ${rule.conditions.map(c => `${c.type}=${c.value}`).join(', ')})`
+        ).join('\n')}`
+      : '\nNo active contextual rules.';
 
     await Promise.all(automations.map(async (automationName) => {
       const currentCode = (await readAutomationFile(automationName)).code;
       const updatedCode = await agent.updateAutomationCode({
         name: automationName,
         description: `Auto-updated by ELO decision loop.`,
-        preferences: `${trimmedPreferenceSummary}\nStructuredContext: ${decisionContext}`,
+        preferences: `${trimmedPreferenceSummary}\nStructuredContext: ${decisionContext}${rulesContext}`,
         logs: sanitizedLogs,
         currentCode
       });
@@ -174,3 +184,185 @@ export const startDecisionLoop = (options: DecisionLoopOptions = {}) => {
 
   return () => clearInterval(timer);
 };
+
+/**
+ * Decision Loop v2: Consult contextual rules before executing actions
+ * This function should be called BEFORE executing any action to check if there are
+ * contextual rules that should override or modify the action.
+ */
+export async function consultContextualRules(
+  deviceId: string,
+  action: string,
+  params: Record<string, any> = {},
+  context?: {
+    time?: string;
+    day?: number;
+    peoplePresent?: string[];
+    location?: string;
+  }
+): Promise<{
+  shouldExecute: boolean;
+  modifiedParams?: Record<string, any>;
+  ruleApplied?: ContextualRule;
+  reason?: string;
+}> {
+  try {
+    const rules = await getAllRules();
+
+    // Filter enabled rules that match the action
+    const relevantRules = rules.filter(rule =>
+      rule.enabled &&
+      rule.triggerType === 'event' &&
+      rule.triggerConfig.eventType === 'device_action' &&
+      rule.triggerConfig.deviceId === deviceId &&
+      rule.triggerConfig.action === action
+    );
+
+    if (relevantRules.length === 0) {
+      return { shouldExecute: true };
+    }
+
+    // Evaluate each rule in order of confidence (highest first)
+    const sortedRules = relevantRules.sort((a, b) => b.confidence - a.confidence);
+
+    for (const rule of sortedRules) {
+      if (await evaluateContextualRule(rule, params, context)) {
+        // Rule matches - apply its actions instead
+        const modifiedParams = applyRuleActions(rule, params);
+
+        // Update rule execution stats
+        await updateRuleExecutionStats(rule.id);
+
+        console.log(`[DecisionLoopV2] Applied contextual rule "${rule.name}" for ${deviceId}=${action}`);
+
+        return {
+          shouldExecute: true,
+          modifiedParams,
+          ruleApplied: rule,
+          reason: `Applied contextual rule: ${rule.name}`
+        };
+      }
+    }
+
+    return { shouldExecute: true };
+  } catch (error) {
+    console.error('[DecisionLoopV2] Error consulting contextual rules:', error);
+    // On error, allow execution to continue
+    return { shouldExecute: true };
+  }
+}
+
+/**
+ * Evaluate if a contextual rule should trigger
+ */
+async function evaluateContextualRule(
+  rule: ContextualRule,
+  params: Record<string, any>,
+  context?: {
+    time?: string;
+    day?: number;
+    peoplePresent?: string[];
+    location?: string;
+  }
+): Promise<boolean> {
+  // Check all conditions
+  for (const condition of rule.conditions) {
+    if (!(await evaluateRuleCondition(condition, params, context))) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Evaluate a single rule condition
+ */
+async function evaluateRuleCondition(
+  condition: RuleCondition,
+  params: Record<string, any>,
+  context?: {
+    time?: string;
+    day?: number;
+    peoplePresent?: string[];
+    location?: string;
+  }
+): Promise<boolean> {
+  switch (condition.type) {
+    case 'time': {
+      if (!context?.time) return false;
+      const [hours, minutes] = context.time.split(':').map(Number);
+      const currentHour = hours;
+      const currentMinute = minutes;
+
+      if (condition.operator === 'equals') {
+        const [targetHour, targetMinute] = (condition.value as string).split(':').map(Number);
+        return currentHour === targetHour && currentMinute === targetMinute;
+      }
+      // Add more time operators as needed
+      return false;
+    }
+
+    case 'day': {
+      if (context?.day === undefined) return false;
+      const currentDay = context.day;
+
+      if (condition.operator === 'equals') {
+        return currentDay === condition.value;
+      }
+      // Add more day operators as needed
+      return false;
+    }
+
+    case 'people_present': {
+      const peoplePresent = context?.peoplePresent || [];
+
+      switch (condition.operator) {
+        case 'contains':
+          return peoplePresent.includes(condition.value);
+        case 'not_contains':
+          return !peoplePresent.includes(condition.value);
+        default:
+          return false;
+      }
+    }
+
+    case 'device_state': {
+      // TODO: Implement device state checking
+      // This would need to query current device states
+      return true; // For now, allow
+    }
+
+    default:
+      return true;
+  }
+}
+
+/**
+ * Apply rule actions to modify parameters
+ */
+function applyRuleActions(rule: ContextualRule, originalParams: Record<string, any>): Record<string, any> {
+  let modifiedParams = { ...originalParams };
+
+  for (const action of rule.actions) {
+    // Apply parameter modifications from the rule
+    if (action.params) {
+      modifiedParams = { ...modifiedParams, ...action.params };
+    }
+  }
+
+  return modifiedParams;
+}
+
+/**
+ * Update rule execution statistics
+ */
+async function updateRuleExecutionStats(ruleId: string): Promise<void> {
+  try {
+    // This would update execution count, last executed time, etc.
+    // For now, just log it
+    console.log(`[DecisionLoopV2] Rule ${ruleId} executed`);
+  } catch (error) {
+    console.error('[DecisionLoopV2] Error updating rule stats:', error);
+  }
+}

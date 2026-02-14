@@ -426,7 +426,9 @@ export const triggerDriverGeneration = async (payload: DiscoveryPayload) => {
                     identificationHint: combinedHint || undefined,
                     previousAttemptError: lastError,
                     userNotes: payload.notes ? JSON.stringify(payload.notes) : undefined,
-                    deviceType: payload.type
+                    deviceType: payload.type,
+                    username: payload.username,
+                    password: payload.password
                 }), {
                     maxOutputTokens: 8192,
                     metadata: {

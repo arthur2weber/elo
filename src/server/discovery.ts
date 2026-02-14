@@ -8,6 +8,7 @@ import { runGeminiPrompt } from '../ai/gemini';
 import { prompts } from '../ai/prompts';
 import { triggerDriverGeneration } from './generators/driver-generator';
 import { readDevices } from '../cli/utils/device-registry';
+import { emitDeviceDiscovered } from './event-bus';
 import {
   defaultBroadcastProfiles,
   defaultPortSignatures,
@@ -37,6 +38,8 @@ type DiscoveryHandle = {
 type DiscoveryPluginConfig = VendorPluginConfig;
 
 const knownDevices = new Set<string>();
+const recentlyEmittedIps = new Map<string, number>(); // IP -> last emit timestamp
+const EMIT_COOLDOWN_MS = 60 * 1000; // 1 minute cooldown per IP
 
 const isIpAlreadyRegistered = async (ip: string): Promise<boolean> => {
   try {
@@ -140,6 +143,7 @@ const logDiscovery = async (payload: {
   headers?: Record<string, string>;
 }) => {
   const startTime = Date.now();
+  const discoveredIp = payload.ip || (payload.addresses && payload.addresses[0]) || 'unknown';
   
   try {
     await appendLogEntry({
@@ -151,6 +155,21 @@ const logDiscovery = async (payload: {
 
     // Trigger AI analysis to propose a driver for this new device
     await triggerDriverGeneration(payload);
+    
+    // Throttle event emissions per IP to prevent spam
+    const lastEmit = recentlyEmittedIps.get(discoveredIp) || 0;
+    if (Date.now() - lastEmit > EMIT_COOLDOWN_MS) {
+      recentlyEmittedIps.set(discoveredIp, Date.now());
+      emitDeviceDiscovered({
+        ip: discoveredIp,
+        name: payload.name,
+        type: payload.type || payload.tag,
+        protocol: payload.protocol,
+        brand: payload.signature ? payload.signature.split(' ')[0] : undefined,
+        model: payload.signature ? payload.signature.split(' ').slice(1).join(' ') : undefined,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     // Registrar métrica de sucesso
     const duration = Date.now() - startTime;

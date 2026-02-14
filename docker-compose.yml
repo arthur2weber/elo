@@ -27,6 +27,12 @@ services:
       - THINKING_BUDGET=${THINKING_BUDGET:-}
       - CLOUDSDK_CONFIG=/gcloud
       - GO2RTC_URL=http://127.0.0.1:1984
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - TELEGRAM_NOTIFICATIONS_ENABLED=${TELEGRAM_NOTIFICATIONS_ENABLED:-false}
+      - STT_URL=http://127.0.0.1:8501
+      - TTS_URL=http://127.0.0.1:8502
+      - WAKEWORD_URL=http://127.0.0.1:8503
     volumes:
       - ./:/app
       - /app/node_modules
@@ -42,6 +48,46 @@ services:
     privileged: true
     volumes:
       - ./go2rtc.yaml:/config/go2rtc.yaml
+
+  piper-tts:
+    build:
+      context: .
+      dockerfile: docker/piper-tts/Dockerfile
+    container_name: piper-tts
+    restart: unless-stopped
+    ports:
+      - "8502:8502"
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  faster-whisper:
+    build:
+      context: .
+      dockerfile: docker/faster-whisper/Dockerfile
+    container_name: faster-whisper
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - WHISPER_MODEL=small
+      - WHISPER_LANGUAGE=pt
+      - PYTHONUNBUFFERED=1
+
+  openwakeword:
+    build:
+      context: .
+      dockerfile: docker/openwakeword/Dockerfile
+    container_name: openwakeword
+    restart: unless-stopped
+    ports:
+      - "8503:8503"
+      - "8504:8504"
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Uncomment to enable microphone access (requires privileged mode)
+    # privileged: true
+    # devices:
+    #   - /dev/snd:/dev/snd
 
 volumes:
   gcloud_config:

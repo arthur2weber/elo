@@ -1,0 +1,382 @@
+/**
+ * Face Detection Worker
+ * Captures frames from cameras and provides face detection using face-api.js
+ */
+
+import Database from 'better-sqlite3';
+import path from 'path';
+import { Person, FaceDetection } from '../types/index.js';
+import { FaceRecognitionEngine, RecognitionResult } from './face-recognition-engine.js';
+import { getPresenceDetector } from './presence-detector.js';
+
+// Dynamic imports for face-api.js
+const faceapi = require('face-api.js');
+const canvas = require('canvas');
+const { Canvas, Image, ImageData, createCanvas } = canvas;
+
+export interface CameraConfig {
+    id: string;
+    name: string;
+    streamUrl: string;
+    location?: string;
+    enabled: boolean;
+}
+
+export interface FaceDetectionResult {
+    personId?: string;
+    confidence: number;
+    embedding: number[];
+    cameraId: string;
+    location?: string;
+    timestamp: Date;
+    imageData?: Buffer; // Optional for debugging
+}
+
+export class FaceDetectionWorker {
+    private db: Database.Database;
+    private cameras: Map<string, CameraConfig> = new Map();
+    private isRunning = false;
+    private detectionInterval: NodeJS.Timeout | null = null;
+    private recognitionEngine: FaceRecognitionEngine;
+    private presenceDetector: any;
+
+    constructor(dbPath: string = path.join(process.cwd(), 'data', 'elo.db')) {
+        this.db = new Database(dbPath);
+        this.recognitionEngine = new FaceRecognitionEngine(dbPath);
+    }
+
+    async initialize(): Promise<void> {
+        console.log('[FaceDetection] Initializing face detection worker...');
+
+        // Configure face-api.js to use canvas
+        faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
+
+        // Load face detection models
+        const modelsPath = path.join(process.cwd(), 'models');
+        await this.loadFaceModels(modelsPath);
+
+        // Initialize presence detector
+        this.presenceDetector = require('./presence-detector.js').getPresenceDetector();
+
+        // Load camera configurations
+        await this.loadCameras();
+
+        console.log(`[FaceDetection] Initialized with ${this.cameras.size} cameras`);
+    }
+
+    private async loadCameras(): Promise<void> {
+        // Load cameras from database
+        try {
+            const stmt = this.db.prepare(`
+                SELECT id, name, ip, type, notes FROM devices
+                WHERE (type LIKE '%camera%' OR type LIKE '%ipcam%' OR type LIKE '%onvif%')
+                AND ip IS NOT NULL AND ip != ''
+                AND id NOT LIKE 'test-%'
+            `);
+            const dbCameras = stmt.all() as any[];
+
+            for (const cam of dbCameras) {
+                const go2rtcBase = process.env.GO2RTC_URL || 'http://127.0.0.1:1984';
+                const streamUrl = cam.ip
+                    ? `${go2rtcBase}/api/frame.jpeg?src=${cam.id}`
+                    : null;
+                if (streamUrl) {
+                    this.cameras.set(cam.id, {
+                        id: cam.id,
+                        name: cam.name || cam.id,
+                        streamUrl,
+                        location: cam.name || 'unknown',
+                        enabled: true
+                    });
+                }
+            }
+
+            if (this.cameras.size === 0) {
+                console.log('[FaceDetection] No cameras found in database, using defaults');
+                // Fallback to hardcoded defaults
+                const defaults: CameraConfig[] = [
+                    {
+                        id: 'camera-front-door',
+                        name: 'Front Door Camera',
+                        streamUrl: `${process.env.GO2RTC_URL || 'http://127.0.0.1:1984'}/api/frame.jpeg?src=camera-front-door`,
+                        location: 'front-door',
+                        enabled: true
+                    },
+                    {
+                        id: 'camera-living-room',
+                        name: 'Living Room Camera',
+                        streamUrl: `${process.env.GO2RTC_URL || 'http://127.0.0.1:1984'}/api/frame.jpeg?src=camera-living-room`,
+                        location: 'living-room',
+                        enabled: true
+                    }
+                ];
+                defaults.forEach(camera => this.cameras.set(camera.id, camera));
+            }
+        } catch (error) {
+            console.error('[FaceDetection] Error loading cameras from DB:', error);
+        }
+    }
+
+    private async loadFaceModels(modelsPath: string): Promise<void> {
+        try {
+            console.log('[FaceDetection] Loading face detection models...');
+
+            // Ensure models directory exists
+            const fs = require('fs');
+            if (!fs.existsSync(modelsPath)) {
+                fs.mkdirSync(modelsPath, { recursive: true });
+            }
+
+            // Load models (these need to be downloaded separately)
+            await faceapi.nets.ssdMobilenetv1.loadFromDisk(modelsPath);
+            await faceapi.nets.faceLandmark68Net.loadFromDisk(modelsPath);
+            await faceapi.nets.faceRecognitionNet.loadFromDisk(modelsPath);
+
+            console.log('[FaceDetection] Face detection models loaded successfully');
+        } catch (error) {
+            console.error('[FaceDetection] Failed to load face models:', error);
+            throw error;
+        }
+    }
+
+    async start(): Promise<void> {
+        if (this.isRunning) return;
+
+        console.log('[FaceDetection] Starting face detection worker...');
+        this.isRunning = true;
+
+        // Start detection loop
+        this.detectionInterval = setInterval(async () => {
+            try {
+                await this.processAllCameras();
+            } catch (error) {
+                console.error('[FaceDetection] Error in detection loop:', error);
+            }
+        }, 10000); // Check every 10 seconds (less frequent for now)
+
+        console.log('[FaceDetection] Worker started successfully');
+    }
+
+    async stop(): Promise<void> {
+        if (!this.isRunning) return;
+
+        console.log('[FaceDetection] Stopping face detection worker...');
+        this.isRunning = false;
+
+        if (this.detectionInterval) {
+            clearInterval(this.detectionInterval);
+            this.detectionInterval = null;
+        }
+
+        console.log('[FaceDetection] Worker stopped');
+    }
+
+    private async processAllCameras(): Promise<void> {
+        // Process cameras sequentially to avoid overwhelming go2rtc
+        for (const camera of this.cameras.values()) {
+            await this.processCamera(camera);
+        }
+    }
+
+    private async processCamera(camera: CameraConfig): Promise<void> {
+        try {
+            // Capture frame from camera
+            const imageBuffer = await this.captureFrame(camera.streamUrl);
+            if (!imageBuffer) {
+                console.warn(`[FaceDetection] No frame captured from ${camera.id}`);
+                return;
+            }
+
+            // Detect faces in the frame
+            await this.detectFaces(imageBuffer, camera);
+
+        } catch (error) {
+            console.error(`[FaceDetection] Error processing camera ${camera.id}:`, error);
+        }
+    }
+
+    private async captureFrame(streamUrl: string): Promise<Buffer | null> {
+        const maxRetries = 3;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+                const response = await fetch(streamUrl, {
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    console.warn(`[FaceDetection] Failed to capture frame (attempt ${attempt}): ${response.status}`);
+                    continue;
+                }
+
+                const buffer = await response.arrayBuffer();
+                if (buffer.byteLength < 1000) {
+                    console.warn(`[FaceDetection] Frame too small (${buffer.byteLength} bytes), retrying...`);
+                    continue;
+                }
+                return Buffer.from(buffer);
+            } catch (error: any) {
+                const cause = error?.cause?.message || error?.cause?.code || '';
+                if (attempt < maxRetries) {
+                    console.warn(`[FaceDetection] Frame capture attempt ${attempt} failed (${cause}), retrying in 2s...`);
+                    await new Promise(r => setTimeout(r, 2000));
+                } else {
+                    console.warn(`[FaceDetection] Frame capture failed after ${maxRetries} attempts: ${error?.message} (${cause})`);
+                }
+            }
+        }
+        return null;
+    }
+
+    private async detectFaces(imageBuffer: Buffer, camera: CameraConfig): Promise<void> {
+        try {
+            // Load image into canvas
+            const img = new Image();
+            img.src = imageBuffer;
+
+            const cvs = createCanvas(img.width, img.height);
+            const ctx = cvs.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+
+            // Detect faces
+            const detections = await faceapi
+                .detectAllFaces(cvs)
+                .withFaceLandmarks()
+                .withFaceDescriptors();
+
+            if (detections.length === 0) {
+                return; // No faces detected — normal, silent
+            }
+
+            console.log(`[FaceDetection] Detected ${detections.length} face(s) in ${camera.id}`);
+
+            // Process each detected face
+            for (const detection of detections) {
+                const embedding = Array.from(detection.descriptor) as number[];
+
+                // Try to recognize the face
+                const recognitionResult = await this.recognitionEngine.recognizeFace(embedding);
+
+                let result: FaceDetectionResult;
+                if (recognitionResult.personId && recognitionResult.confidence > 0.7) {
+                    // Known person recognized
+                    result = {
+                        personId: recognitionResult.personId,
+                        confidence: recognitionResult.confidence,
+                        embedding: embedding,
+                        cameraId: camera.id,
+                        location: camera.location,
+                        timestamp: new Date()
+                    };
+                    console.log(`[FaceDetection] Recognized ${recognitionResult.person?.name} with ${(result.confidence * 100).toFixed(1)}% confidence in ${camera.location}`);
+                } else {
+                    // Unknown person
+                    result = {
+                        confidence: recognitionResult.confidence || 0,
+                        embedding: embedding,
+                        cameraId: camera.id,
+                        location: camera.location,
+                        timestamp: new Date()
+                    };
+                    console.log(`[FaceDetection] Unknown person detected with ${(result.confidence * 100).toFixed(1)}% confidence in ${camera.location}`);
+
+                    // Send notification for unknown person
+                    const notificationService = require('./notification-service.js').getNotificationService();
+                    if (notificationService) {
+                        await notificationService.alertUnknownPerson(camera.id, result.confidence);
+                    }
+                }
+
+                // Store detection result
+                await this.storeDetectionResult(result);
+
+                // Update presence
+                if (this.presenceDetector && result.personId) {
+                    this.presenceDetector.updatePresence({
+                        personId: result.personId,
+                        cameraId: result.cameraId,
+                        location: result.location,
+                        confidence: result.confidence,
+                        timestamp: result.timestamp
+                    });
+                }
+            }
+
+        } catch (error) {
+            console.error('[FaceDetection] Error detecting faces:', error);
+        }
+    }
+
+    private async storeDetectionResult(result: FaceDetectionResult): Promise<void> {
+        // Record in face_detections table
+        const stmt = this.db.prepare(`
+            INSERT INTO face_detections (person_id, confidence, embedding, camera_id, location, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+
+        stmt.run(
+            result.personId || null,
+            result.confidence,
+            JSON.stringify(result.embedding),
+            result.cameraId,
+            result.location,
+            result.timestamp.toISOString()
+        );
+
+        // Update person's last seen if recognized
+        if (result.personId) {
+            const updateStmt = this.db.prepare(`
+                UPDATE people
+                SET last_seen = ?, last_seen_location = ?
+                WHERE id = ?
+            `);
+
+            updateStmt.run(
+                result.timestamp.toISOString(),
+                result.location,
+                result.personId
+            );
+        }
+    }
+
+    // API method to register a face embedding for a person
+    async registerFace(personId: string, imageBuffer: Buffer): Promise<boolean> {
+        try {
+            // Load image into canvas
+            const img = new Image();
+            img.src = imageBuffer;
+
+            const cvs = createCanvas(img.width, img.height);
+            const ctx = cvs.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+
+            // Detect single face and extract embedding
+            const detection = await faceapi
+                .detectSingleFace(cvs)
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+
+            if (!detection) {
+                console.warn(`[FaceDetection] No face detected in image for ${personId}`);
+                return false;
+            }
+
+            const embedding = Array.from(detection.descriptor) as number[];
+            return await this.recognitionEngine.registerEmbedding(personId, embedding);
+
+        } catch (error) {
+            console.error(`[FaceDetection] Error registering face for ${personId}:`, error);
+            return false;
+        }
+    }
+
+    close(): void {
+        this.stop();
+        this.recognitionEngine.close();
+        this.db.close();
+    }
+}

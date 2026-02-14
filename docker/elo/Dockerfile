@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 
 COPY package*.json ./
 # Clean install including devDependencies for building
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 COPY tsconfig.json ./
 COPY src ./src

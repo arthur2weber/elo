@@ -50,38 +50,53 @@ export const getLogsDir = () => path.join(getBasePath(), 'logs');
 export const getRequestsLogPath = () => path.join(getLogsDir(), 'requests.jsonl');
 export const getAiUsageLogPath = () => path.join(getLogsDir(), 'ai-usage.jsonl');
 
-// Events with aggregation: group by device/hour, keep latest state
+// Events with granular timestamps - no aggregation for better analytics
 export const appendLogEntry = async (entry: LogEntry) => {
   const db = getDb();
   try {
     const timestamp = entry.timestamp || new Date().toISOString();
     const deviceId = entry.device;
 
-    // Check if we already have an event for this device in this hour
-    const existing = await dbGet(db, `
-      SELECT id, state FROM events 
-      WHERE device_id = ? AND strftime('%H', timestamp) = ?
-      ORDER BY timestamp DESC LIMIT 1
-    `, [deviceId, new Date(timestamp).getHours().toString().padStart(2, '0')]) as { id: number; state: string } | undefined;
+    // Insert each event individually with precise timestamp
+    await dbRun(db, `
+      INSERT INTO events (device_id, timestamp, event_type, state, aggregated)
+      VALUES (?, ?, ?, ?, 0)
+    `, [deviceId, timestamp, entry.event, JSON.stringify(entry.payload || {})]);
+  } finally {
+    db.close();
+  }
+};
 
-    if (existing) {
-      // Update existing aggregated event with latest state
-      const currentState = JSON.parse(existing.state);
-      const newState = { ...currentState, ...entry.payload };
-      await dbRun(db, `
-        UPDATE events SET 
-          timestamp = ?, 
-          event_type = ?, 
-          state = ?
-        WHERE id = ?
-      `, [timestamp, entry.event, JSON.stringify(newState), existing.id]);
-    } else {
-      // Insert new aggregated event
-      await dbRun(db, `
-        INSERT INTO events (device_id, timestamp, event_type, state, aggregated)
-        VALUES (?, ?, ?, ?, 1)
-      `, [deviceId, timestamp, entry.event, JSON.stringify(entry.payload || {})]);
-    }
+export const getAggregatedEventsByHour = async (deviceId?: string, hours = 24): Promise<any[]> => {
+  const db = getDb();
+  try {
+    const whereClause = deviceId ? 'WHERE device_id = ?' : '';
+    const params = deviceId ? [deviceId] : [];
+
+    // Create a view of aggregated events by device/hour for the last N hours
+    const rows = await dbAll(db, `
+      SELECT
+        device_id,
+        strftime('%Y-%m-%d %H:00:00', timestamp) as hour,
+        event_type,
+        COUNT(*) as event_count,
+        MAX(timestamp) as latest_timestamp,
+        json_group_array(state) as states
+      FROM events
+      WHERE timestamp >= datetime('now', '-${hours} hours')
+      ${whereClause}
+      GROUP BY device_id, strftime('%Y-%m-%d %H', timestamp), event_type
+      ORDER BY hour DESC, device_id
+    `, params);
+
+    return rows.map((row: any) => ({
+      deviceId: row.device_id,
+      hour: row.hour,
+      eventType: row.event_type,
+      eventCount: row.event_count,
+      latestTimestamp: row.latest_timestamp,
+      states: JSON.parse(row.states || '[]')
+    }));
   } finally {
     db.close();
   }
@@ -107,8 +122,6 @@ export const readRecentLogs = async (limit = 50): Promise<LogEntry[]> => {
     db.close();
   }
 };
-
-// Requests with basic aggregation by user/hour
 export const appendRequestLog = async (entry: RequestLogEntry) => {
   const db = getDb();
   try {
@@ -224,6 +237,38 @@ export const readRecentAiUsage = async (limit = 200): Promise<AiUsageLogEntry[]>
       thinkingBudget: row.thinking_budget,
       extra: { aggregated: true }
     }));
+  } finally {
+    db.close();
+  }
+};
+
+export type CorrectionEntry = {
+  deviceId: string;
+  action: string;
+  originalParams: any;
+  correctedParams: any;
+  context: {
+    time: string;
+    day: number;
+    peoplePresent?: string[];
+  };
+  timestamp?: string;
+};
+
+export const appendCorrection = async (entry: CorrectionEntry) => {
+  const db = getDb();
+  try {
+    await dbRun(db, `
+      INSERT INTO corrections (device_id, action, original_params, corrected_params, context, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [
+      entry.deviceId,
+      entry.action,
+      JSON.stringify(entry.originalParams),
+      JSON.stringify(entry.correctedParams),
+      JSON.stringify(entry.context),
+      entry.timestamp || new Date().toISOString()
+    ]);
   } finally {
     db.close();
   }
