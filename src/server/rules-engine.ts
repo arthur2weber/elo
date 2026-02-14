@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { getKnowledgeDb } from './database';
 import { appendCorrection, type CorrectionEntry } from '../cli/utils/storage-files';
 
 export interface RuleCondition {
@@ -31,9 +30,7 @@ export interface ContextualRule {
   triggerCount: number;
 }
 
-const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
-
-const getDb = () => new Database(getDbPath());
+const getDb = () => getKnowledgeDb();
 
 const dbAll = async (db: any, query: string, params: any[] = []): Promise<any[]> => {
   return db.prepare(query).all(...params);
@@ -49,32 +46,28 @@ const dbRun = async (db: any, query: string, params: any[] = []): Promise<any> =
 
 export const getAllRules = async (): Promise<ContextualRule[]> => {
   const db = getDb();
-  try {
-    const rows = await dbAll(db, `
-      SELECT * FROM rules
-      WHERE enabled = 1
-      ORDER BY confidence DESC, created_at DESC
-    `);
+  const rows = await dbAll(db, `
+    SELECT * FROM rules
+    WHERE enabled = 1
+    ORDER BY confidence DESC, created_at DESC
+  `);
 
-    return rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      triggerType: row.trigger_type,
-      triggerConfig: JSON.parse(row.trigger_config || '{}'),
-      conditions: JSON.parse(row.conditions || '[]'),
-      actions: JSON.parse(row.actions || '[]'),
-      confidence: row.confidence,
-      enabled: Boolean(row.enabled),
-      createdBy: row.created_by,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      lastTriggered: row.last_triggered,
-      triggerCount: row.trigger_count
-    }));
-  } finally {
-    db.close();
-  }
+  return rows.map((row: any) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    triggerType: row.trigger_type,
+    triggerConfig: JSON.parse(row.trigger_config || '{}'),
+    conditions: JSON.parse(row.conditions || '[]'),
+    actions: JSON.parse(row.actions || '[]'),
+    confidence: row.confidence,
+    enabled: Boolean(row.enabled),
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastTriggered: row.last_triggered,
+    triggerCount: row.trigger_count
+  }));
 };
 
 export const createRuleFromCorrection = async (correction: CorrectionEntry): Promise<string> => {
@@ -139,31 +132,27 @@ export const createRuleFromCorrection = async (correction: CorrectionEntry): Pro
 
 export const saveRule = async (rule: ContextualRule): Promise<void> => {
   const db = getDb();
-  try {
-    await dbRun(db, `
-      INSERT OR REPLACE INTO rules (
-        id, name, description, trigger_type, trigger_config, conditions, actions,
-        confidence, enabled, created_by, created_at, updated_at, last_triggered, trigger_count
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      rule.id,
-      rule.name,
-      rule.description,
-      rule.triggerType,
-      JSON.stringify(rule.triggerConfig),
-      JSON.stringify(rule.conditions),
-      JSON.stringify(rule.actions),
-      rule.confidence,
-      rule.enabled ? 1 : 0,
-      rule.createdBy,
-      rule.createdAt,
-      rule.updatedAt,
-      rule.lastTriggered,
-      rule.triggerCount
-    ]);
-  } finally {
-    db.close();
-  }
+  await dbRun(db, `
+    INSERT OR REPLACE INTO rules (
+      id, name, description, trigger_type, trigger_config, conditions, actions,
+      confidence, enabled, created_by, created_at, updated_at, last_triggered, trigger_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    rule.id,
+    rule.name,
+    rule.description,
+    rule.triggerType,
+    JSON.stringify(rule.triggerConfig),
+    JSON.stringify(rule.conditions),
+    JSON.stringify(rule.actions),
+    rule.confidence,
+    rule.enabled ? 1 : 0,
+    rule.createdBy,
+    rule.createdAt,
+    rule.updatedAt,
+    rule.lastTriggered,
+    rule.triggerCount
+  ]);
 };
 
 export const evaluateRuleConditions = (rule: ContextualRule, context: {
@@ -242,45 +231,37 @@ export const evaluateRuleConditions = (rule: ContextualRule, context: {
 
 export const updateRuleConfidence = async (ruleId: string, success: boolean): Promise<void> => {
   const db = getDb();
-  try {
-    // Get current confidence
-    const row = await dbGet(db, 'SELECT confidence FROM rules WHERE id = ?', [ruleId]);
-    if (!row) return;
+  // Get current confidence
+  const row = await dbGet(db, 'SELECT confidence FROM rules WHERE id = ?', [ruleId]);
+  if (!row) return;
 
-    let newConfidence = row.confidence;
+  let newConfidence = row.confidence;
 
-    if (success) {
-      // Increase confidence (but cap at 1.0)
-      newConfidence = Math.min(1.0, newConfidence + 0.1);
-    } else {
-      // Decrease confidence (but don't go below 0.0)
-      newConfidence = Math.max(0.0, newConfidence - 0.2);
-    }
+  if (success) {
+    // Increase confidence (but cap at 1.0)
+    newConfidence = Math.min(1.0, newConfidence + 0.1);
+  } else {
+    // Decrease confidence (but don't go below 0.0)
+    newConfidence = Math.max(0.0, newConfidence - 0.2);
+  }
 
-    await dbRun(db, `
-      UPDATE rules
-      SET confidence = ?, updated_at = ?
-      WHERE id = ?
-    `, [newConfidence, new Date().toISOString(), ruleId]);
+  await dbRun(db, `
+    UPDATE rules
+    SET confidence = ?, updated_at = ?
+    WHERE id = ?
+  `, [newConfidence, new Date().toISOString(), ruleId]);
 
-    // Disable rule if confidence drops too low
-    if (newConfidence < 0.1) {
-      await dbRun(db, 'UPDATE rules SET enabled = 0 WHERE id = ?', [ruleId]);
-    }
-  } finally {
-    db.close();
+  // Disable rule if confidence drops too low
+  if (newConfidence < 0.1) {
+    await dbRun(db, 'UPDATE rules SET enabled = 0 WHERE id = ?', [ruleId]);
   }
 };
 
 export const recordRuleTrigger = async (ruleId: string): Promise<void> => {
   const db = getDb();
-  try {
-    await dbRun(db, `
-      UPDATE rules
-      SET last_triggered = ?, trigger_count = trigger_count + 1, updated_at = ?
-      WHERE id = ?
-    `, [new Date().toISOString(), new Date().toISOString(), ruleId]);
-  } finally {
-    db.close();
-  }
+  await dbRun(db, `
+    UPDATE rules
+    SET last_triggered = ?, trigger_count = trigger_count + 1, updated_at = ?
+    WHERE id = ?
+  `, [new Date().toISOString(), new Date().toISOString(), ruleId]);
 };

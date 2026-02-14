@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { getLocalDb } from '../../server/database';
 
 export type DecisionEntry = {
   timestamp: string;
@@ -17,9 +16,7 @@ type PreferenceStats = {
   total: number;
 };
 
-const getDbPath = () => process.env.ELO_DB_PATH || path.join(process.cwd(), 'data', 'elo.db');
-
-const getDb = () => new Database(getDbPath());
+const getDb = () => getLocalDb();
 
 const dbAll = async (db: any, query: string, params: any[] = []): Promise<any[]> => {
   return db.prepare(query).all(...params);
@@ -35,53 +32,45 @@ const dbRun = async (db: any, query: string, params: any[] = []): Promise<any> =
 
 export const appendDecision = async (entry: DecisionEntry) => {
   const db = getDb();
-  try {
-    const result = await dbRun(db, `
-      INSERT INTO decisions (timestamp, user, context, action_key, suggestion, accepted, status, details)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      entry.timestamp || new Date().toISOString(),
-      entry.user ?? 'default',
-      entry.context ?? '',
-      entry.actionKey,
-      entry.suggestion,
-      entry.accepted ? 1 : 0,
-      entry.status || 'APPROVED',
-      JSON.stringify(entry.details || {})
-    ]);
-    
-    return {
-      id: result?.lastInsertRowid,
-      ...entry
-    };
-  } finally {
-    db.close();
-  }
+  const result = await dbRun(db, `
+    INSERT INTO decisions (timestamp, user, context, action_key, suggestion, accepted, status, details)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    entry.timestamp || new Date().toISOString(),
+    entry.user ?? 'default',
+    entry.context ?? '',
+    entry.actionKey,
+    entry.suggestion,
+    entry.accepted ? 1 : 0,
+    entry.status || 'APPROVED',
+    JSON.stringify(entry.details || {})
+  ]);
+  
+  return {
+    id: result?.lastInsertRowid,
+    ...entry
+  };
 };
 
 export const readDecisions = async (limit = 200): Promise<DecisionEntry[]> => {
   const db = getDb();
-  try {
-    const rows = await dbAll(db, `
-      SELECT timestamp, user, context, action_key as actionKey, suggestion, accepted, status, details
-      FROM decisions
-      ORDER BY timestamp DESC
-      LIMIT ?
-    `, [limit]);
-    
-    return rows.map((row: any) => ({
-      timestamp: row.timestamp,
-      user: row.user,
-      context: row.context,
-      actionKey: row.actionKey,
-      suggestion: row.suggestion,
-      accepted: Boolean(row.accepted),
-      status: row.status,
-      details: JSON.parse(row.details || '{}')
-    }));
-  } finally {
-    db.close();
-  }
+  const rows = await dbAll(db, `
+    SELECT timestamp, user, context, action_key as actionKey, suggestion, accepted, status, details
+    FROM decisions
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `, [limit]);
+  
+  return rows.map((row: any) => ({
+    timestamp: row.timestamp,
+    user: row.user,
+    context: row.context,
+    actionKey: row.actionKey,
+    suggestion: row.suggestion,
+    accepted: Boolean(row.accepted),
+    status: row.status,
+    details: JSON.parse(row.details || '{}')
+  }));
 };
 
 export const buildPreferenceStats = (decisions: DecisionEntry[]) => {

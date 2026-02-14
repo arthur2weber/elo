@@ -4,6 +4,7 @@
  */
 
 import Database from 'better-sqlite3';
+import { getLocalDb } from './database';
 import path from 'path';
 import { Person, FaceDetection } from '../types/index.js';
 import { FaceRecognitionEngine, RecognitionResult } from './face-recognition-engine.js';
@@ -47,9 +48,9 @@ export class FaceDetectionWorker {
     private static readonly LOW_RES_WIDTH = 160; // Tiny resolution for motion detection
     private static readonly LOW_RES_HEIGHT = 120;
 
-    constructor(dbPath: string = path.join(process.cwd(), 'data', 'elo.db')) {
-        this.db = new Database(dbPath);
-        this.recognitionEngine = new FaceRecognitionEngine(dbPath);
+    constructor() {
+        this.db = getLocalDb();
+        this.recognitionEngine = new FaceRecognitionEngine();
     }
 
     async initialize(): Promise<void> {
@@ -429,6 +430,6 @@ export class FaceDetectionWorker {
     close(): void {
         this.stop();
         this.recognitionEngine.close();
-        this.db.close();
+        // DB is managed by centralized database module
     }
 }

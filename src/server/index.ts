@@ -19,7 +19,7 @@ import { DailyBriefingGenerator } from './daily-briefing';
 import { AutomationEngineV2 } from './automation-engine-v2';
 import { initCorrelationEngine } from './correlation-engine';
 import { RuleProposer } from './rule-proposer';
-import Database from 'better-sqlite3';
+import { getLocalDb, getKnowledgeDb, closeAllDatabases } from './database';
 // import { createVoiceGateway } = require('./voice-gateway.js');
 
 const app = express();
@@ -75,25 +75,25 @@ const startServer = async () => {
     // Initialize Phase 5: Mordomo Invisível (Invisible Butler)
     console.log('[ELO] Initializing Phase 5: Mordomo Invisível...');
 
-    // Initialize database connection for Phase 5 components
-    const dbPath = process.env.ELO_DB_PATH || './data/elo.db';
-    const db = new Database(dbPath);
+    // Initialize database connections (local + knowledge)
+    const localDb = getLocalDb();
+    const knowledgeDb = getKnowledgeDb();
 
     // Initialize Phase 5 components
-    const metricsStore = new MetricsStore(db);
-    const baselineCalculator = new BaselineCalculator(metricsStore, db);
-    const trendAnalyzer = new TrendAnalyzer(metricsStore, db);
-    const proactiveSuggestions = new ProactiveSuggestions(trendAnalyzer, baselineCalculator, metricsStore, db);
+    const metricsStore = new MetricsStore(localDb);
+    const baselineCalculator = new BaselineCalculator(metricsStore, localDb);
+    const trendAnalyzer = new TrendAnalyzer(metricsStore, localDb);
+    const proactiveSuggestions = new ProactiveSuggestions(trendAnalyzer, baselineCalculator, metricsStore, localDb);
     const dailyBriefingGenerator = new DailyBriefingGenerator(
       proactiveSuggestions,
       metricsStore,
       trendAnalyzer,
       baselineCalculator,
-      db
+      localDb
     );
 
     // Initialize Automation Engine v2 (Phase 4)
-    const automationEngineV2 = new AutomationEngineV2(db);
+    const automationEngineV2 = new AutomationEngineV2(knowledgeDb);
     await automationEngineV2.initialize();
 
     console.log('[ELO] Phase 4 Automation Engine v2 initialized successfully');
@@ -105,8 +105,8 @@ const startServer = async () => {
 
     // Initialize Phase 3: Correlation Engine + Rule Proposer
     console.log('[ELO] Initializing Phase 3: Correlation Engine + Rule Proposer...');
-    const correlationEngine = initCorrelationEngine(dbPath);
-    const ruleProposer = new RuleProposer(db);
+    const correlationEngine = initCorrelationEngine();
+    const ruleProposer = new RuleProposer(knowledgeDb);
 
     // Schedule periodic correlation analysis (every 6 hours)
     const CORRELATION_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours

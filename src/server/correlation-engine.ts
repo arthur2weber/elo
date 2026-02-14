@@ -5,7 +5,7 @@
  */
 
 import Database from 'better-sqlite3';
-import path from 'path';
+import { getLocalDb, getKnowledgeDb } from './database';
 
 export interface EventPattern {
     id: string;
@@ -36,14 +36,15 @@ export interface CorrelationResult {
 }
 
 export class CorrelationEngine {
-    private db: Database.Database;
+    private localDb: Database.Database;
+    private knowledgeDb: Database.Database;
     private readonly ANALYSIS_WINDOW = 24 * 60 * 60 * 1000; // 24 hours
     private readonly MIN_CONFIDENCE = 0.6; // 60% confidence threshold
     private readonly MIN_FREQUENCY = 3; // minimum 3 occurrences
 
-    constructor(dbPath: string = path.join(process.cwd(), 'data', 'elo.db')) {
-        this.db = new Database(dbPath);
-        this.ensureTables();
+    constructor() {
+        this.localDb = getLocalDb();
+        this.knowledgeDb = getKnowledgeDb();
     }
 
     /**
@@ -96,7 +97,7 @@ export class CorrelationEngine {
      */
     getPatternsForTrigger(deviceId: string, action: string): EventPattern[] {
         try {
-            const stmt = this.db.prepare(`
+            const stmt = this.knowledgeDb.prepare(`
                 SELECT * FROM correlation_patterns
                 WHERE trigger_device_id = ? AND trigger_event_type = ?
                 AND confidence >= ?
@@ -116,7 +117,7 @@ export class CorrelationEngine {
      */
     getHighConfidencePatterns(limit: number = 50): EventPattern[] {
         try {
-            const stmt = this.db.prepare(`
+            const stmt = this.knowledgeDb.prepare(`
                 SELECT * FROM correlation_patterns
                 WHERE confidence >= ?
                 ORDER BY confidence DESC, frequency DESC
@@ -133,7 +134,7 @@ export class CorrelationEngine {
 
     private getEventsInWindow(startTime: Date, endTime: Date): any[] {
         try {
-            const stmt = this.db.prepare(`
+            const stmt = this.localDb.prepare(`
                 SELECT
                     id,
                     device_id,
@@ -272,7 +273,7 @@ export class CorrelationEngine {
     }
 
     private savePatterns(patterns: EventPattern[]): void {
-        const insertStmt = this.db.prepare(`
+        const insertStmt = this.knowledgeDb.prepare(`
             INSERT OR REPLACE INTO correlation_patterns
             (trigger_event_type, trigger_device_id, trigger_event_data,
              correlated_event_type, correlated_device_id, correlated_event_data,
@@ -320,34 +321,8 @@ export class CorrelationEngine {
         };
     }
 
-    private ensureTables(): void {
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS correlation_patterns (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                trigger_event_type TEXT NOT NULL,
-                trigger_device_id TEXT,
-                trigger_event_data TEXT,
-                correlated_event_type TEXT NOT NULL,
-                correlated_device_id TEXT,
-                correlated_event_data TEXT,
-                time_delay_seconds INTEGER NOT NULL,
-                confidence REAL NOT NULL,
-                frequency INTEGER NOT NULL,
-                consistency REAL NOT NULL,
-                last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_correlation_patterns_confidence
-            ON correlation_patterns(confidence DESC);
-
-            CREATE INDEX IF NOT EXISTS idx_correlation_patterns_trigger
-            ON correlation_patterns(trigger_event_type, trigger_device_id);
-        `);
-    }
-
     close(): void {
-        this.db.close();
+        // Connections are managed by the database module
     }
 }
 
@@ -358,7 +333,7 @@ export function getCorrelationEngine(): CorrelationEngine | null {
     return correlationEngine;
 }
 
-export function initCorrelationEngine(dbPath?: string): CorrelationEngine {
-    correlationEngine = new CorrelationEngine(dbPath);
+export function initCorrelationEngine(): CorrelationEngine {
+    correlationEngine = new CorrelationEngine();
     return correlationEngine;
 }                                                                       

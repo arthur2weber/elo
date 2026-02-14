@@ -5,7 +5,7 @@
 
 import express from 'express';
 import Database from 'better-sqlite3';
-import path from 'path';
+import { getLocalDb } from './database';
 import { Person, PersonRole, PersonRestrictions, FaceDetection, PermissionCheck } from '../types/index.js';
 import { FaceDetectionWorker } from './face-detection-worker.js';
 
@@ -23,8 +23,8 @@ export class PeopleRegistryService {
     private router: express.Router;
     private faceDetectionWorker: FaceDetectionWorker;
 
-    constructor(faceDetectionWorker?: FaceDetectionWorker, dbPath: string = path.join(process.cwd(), 'data', 'elo.db')) {
-        this.db = new Database(dbPath);
+    constructor(faceDetectionWorker?: FaceDetectionWorker) {
+        this.db = getLocalDb();
         this.router = express.Router();
         this.faceDetectionWorker = faceDetectionWorker!;
         this.setupRoutes();
@@ -427,6 +427,6 @@ export class PeopleRegistryService {
     }
 
     close() {
-        this.db.close();
+        // DB is managed by centralized database module
     }
 }

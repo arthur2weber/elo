@@ -1,5 +1,4 @@
-import Database from 'better-sqlite3';
-import path from 'path';
+import { getLocalDb } from './database';
 import { RequestLogEntry, readRecentRequests } from '../cli/utils/storage-files';
 import { DeviceConfig } from '../cli/utils/device-registry';
 
@@ -32,9 +31,7 @@ export type StructuredDecisionContext = {
   requests: DecisionRequestEntry[];
 };
 
-const getDbPath = () => path.join(process.cwd(), 'data', 'elo.db');
-
-const getDb = () => new Database(getDbPath());
+const getDb = () => getLocalDb();
 
 const SNAPSHOT_OMIT_KEYS = new Set(['raw', 'rawHex', 'headers', 'body', 'html', 'dump', 'log', 'trace']);
 const MAX_SNAPSHOT_STRING = 512;
@@ -114,67 +111,59 @@ const sanitizeRequestsForContext = (entries: RequestLogEntry[]): DecisionRequest
 
 export const buildDeviceStatusSnapshot = async (): Promise<DeviceStatusSnapshot[]> => {
   const db = getDb();
-  try {
-    // Get latest event per device, excluding discovery events
-    const rows = db.prepare(`
-      SELECT device_id, event_type, timestamp, state
+  // Get latest event per device, excluding discovery events
+  const rows = db.prepare(`
+    SELECT device_id, event_type, timestamp, state
+    FROM events
+    WHERE device_id != 'discovery' AND event_type != 'device_discovery'
+    AND (device_id, timestamp) IN (
+      SELECT device_id, MAX(timestamp)
       FROM events
       WHERE device_id != 'discovery' AND event_type != 'device_discovery'
-      AND (device_id, timestamp) IN (
-        SELECT device_id, MAX(timestamp)
-        FROM events
-        WHERE device_id != 'discovery' AND event_type != 'device_discovery'
-        GROUP BY device_id
-      )
-      ORDER BY timestamp DESC
-    `).all();
+      GROUP BY device_id
+    )
+    ORDER BY timestamp DESC
+  `).all();
 
-    return rows.map((row: any) => ({
-      device: row.device_id,
-      lastEvent: row.event_type,
-      timestamp: row.timestamp,
-      payload: sanitizeSnapshotPayload(JSON.parse(row.state))
-    }));
-  } finally {
-    db.close();
-  }
+  return rows.map((row: any) => ({
+    device: row.device_id,
+    lastEvent: row.event_type,
+    timestamp: row.timestamp,
+    payload: sanitizeSnapshotPayload(JSON.parse(row.state))
+  }));
 };
 
 export const buildDeviceStatusHistory = async (limit = 20): Promise<DeviceStatusHistoryEntry[]> => {
   const db = getDb();
-  try {
-    // Get recent events per device, excluding duplicates and discovery
-    const rows = db.prepare(`
-      SELECT device_id, event_type, timestamp, state
-      FROM events
-      WHERE device_id != 'discovery' AND event_type != 'device_discovery'
-      ORDER BY timestamp DESC
-      LIMIT ?
-    `).all(limit * 2); // Get more to filter duplicates
+  // Get recent events per device, excluding duplicates and discovery
+  const rows = db.prepare(`
+    SELECT device_id, event_type, timestamp, state
+    FROM events
+    WHERE device_id != 'discovery' AND event_type != 'device_discovery'
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `).all(limit * 2); // Get more to filter duplicates
 
-    const history: DeviceStatusHistoryEntry[] = [];
-    const lastSignature = new Map<string, string>();
+  const history: DeviceStatusHistoryEntry[] = [];
+  const lastSignature = new Map<string, string>();
 
-    // Process in chronological order (reverse the DESC order)
-    rows.reverse().forEach((row: any) => {
-      const payload = sanitizeSnapshotPayload(JSON.parse(row.state));
-      const signature = JSON.stringify({ event: row.event_type, payload });
-      if (lastSignature.get(row.device_id) === signature) {
-        return;
-      }
-      lastSignature.set(row.device_id, signature);
-      history.push({
-        device: row.device_id,
-        event: row.event_type,
-        timestamp: row.timestamp,
-        payload
-      });
+  // Process in chronological order (reverse the DESC order)
+  rows.reverse().forEach((row: any) => {
+    const payload = sanitizeSnapshotPayload(JSON.parse(row.state));
+    const signature = JSON.stringify({ event: row.event_type, payload });
+    if (lastSignature.get(row.device_id) === signature) {
+      return;
+    }
+    lastSignature.set(row.device_id, signature);
+    history.push({
+      device: row.device_id,
+      event: row.event_type,
+      timestamp: row.timestamp,
+      payload
     });
+  });
 
-    return history.slice(-limit);
-  } finally {
-    db.close();
-  }
+  return history.slice(-limit);
 };
 
 export const formatDecisionContext = (context: StructuredDecisionContext) => {

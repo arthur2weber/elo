@@ -14,6 +14,7 @@
     "lint": "eslint \"{src,scripts}/**/*.ts\"",
     "db:init": "ts-node scripts/init-db.ts",
     "db:migrate": "ts-node scripts/migrate-to-sqlite.ts",
+    "db:migrate-split": "ts-node scripts/migrate-split-db.ts",
     "db:foundation": "ts-node scripts/migrate-to-foundation.ts",
     "db:maintain": "ts-node scripts/maintain-db.ts"
   },

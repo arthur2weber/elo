@@ -4,7 +4,7 @@
  */
 
 import Database from 'better-sqlite3';
-import path from 'path';
+import { getLocalDb } from './database';
 
 export interface PresenceState {
     personId: string;
@@ -28,8 +28,8 @@ export class PresenceDetector {
     private presenceStates: Map<string, PresenceState> = new Map();
     private readonly PRESENCE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
-    constructor(dbPath: string = path.join(process.cwd(), 'data', 'elo.db')) {
-        this.db = new Database(dbPath);
+    constructor() {
+        this.db = getLocalDb();
         this.loadPresenceStates();
     }
 
@@ -213,7 +213,7 @@ export class PresenceDetector {
     }
 
     close(): void {
-        this.db.close();
+        // DB is managed by centralized database module
     }
 }
 
@@ -224,7 +224,7 @@ export function getPresenceDetector(): PresenceDetector | null {
     return presenceDetector;
 }
 
-export function initPresenceDetector(dbPath?: string): PresenceDetector {
-    presenceDetector = new PresenceDetector(dbPath);
+export function initPresenceDetector(): PresenceDetector {
+    presenceDetector = new PresenceDetector();
     return presenceDetector;
 }

@@ -6,3 +6,13 @@ dist/
 logs/
 automations/
 backups/
+
+# Database files — local.db contains sensitive data (IPs, passwords, etc)
+data/local.db
+data/local.db-wal
+data/local.db-shm
+data/elo.db
+data/elo.db-wal
+data/elo.db-shm
+data/elo-test-*.db
+# knowledge.db IS versioned (drivers, rules, patterns — no sensitive data)

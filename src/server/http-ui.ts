@@ -932,41 +932,32 @@ export const registerHttpUi = (app: express.Express, dailyBriefingGenerator?: Da
       console.log('[System] Manual reset EXECUTION started...');
       console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
 
-      // Import database functions
-      let Database;
-      try {
-        Database = (await import('better-sqlite3')).default;
-      } catch (err) {
-        throw new Error('Failed to load better-sqlite3');
-      }
+      const { getLocalDb, getKnowledgeDb } = await import('./database');
 
       const path = await import('path');
       const fs = await import('fs');
 
-      const dbPath = path.join(process.cwd(), 'data', 'elo.db');
-      
-      const db = new Database(dbPath);
+      const localDb = getLocalDb();
+      const knowledgeDb = getKnowledgeDb();
 
-      // Note: This reset endpoint might need update to support async sqlite3 if used in production
-      // For now, assuming better-sqlite3 logic or synchronous compatible usage
-      // But sqlite3 is async. This endpoint needs refactoring if sqlite3 is used.
-      
-      // Let's defer this specific refactor unless requested, as it's a "reset" endpoint.
-      // But we should at least not crash on import.
-      
       try {
         // 1. Clear all database tables
-        console.log('[System] Clearing database tables...');
-        db.exec('DELETE FROM events');
-        db.exec('DELETE FROM requests');
-        db.exec('DELETE FROM suggestions');
-        db.exec('DELETE FROM ai_usage');
-        db.exec('DELETE FROM drivers');
-        db.exec('DELETE FROM devices');
-        db.exec('DELETE FROM decisions');
+        console.log('[System] Clearing local database tables...');
+        localDb.exec('DELETE FROM events');
+        localDb.exec('DELETE FROM requests');
+        localDb.exec('DELETE FROM ai_usage');
+        localDb.exec('DELETE FROM devices');
+        localDb.exec('DELETE FROM decisions');
 
         // Reset autoincrement counters
-        db.exec('DELETE FROM sqlite_sequence');
+        try { localDb.exec('DELETE FROM sqlite_sequence'); } catch (_) {}
+
+        console.log('[System] Clearing knowledge database tables...');
+        knowledgeDb.exec('DELETE FROM suggestions');
+        knowledgeDb.exec('DELETE FROM drivers');
+
+        // Reset autoincrement counters
+        try { knowledgeDb.exec('DELETE FROM sqlite_sequence'); } catch (_) {}
 
         console.log('[System] Database tables cleared.');
 
@@ -994,7 +985,7 @@ export const registerHttpUi = (app: express.Express, dailyBriefingGenerator?: Da
         console.log('[System] Reset completed successfully.');
         res.json({ success: true, message: 'System reset completed. All devices, drivers, and tokens purged from database.' });
       } finally {
-        db.close();
+        // Connections are managed by the database module singleton
       }
     } catch (error) {
       console.error('[System] Reset failed:', error);

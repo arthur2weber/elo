@@ -4,7 +4,7 @@
  */
 
 import Database from 'better-sqlite3';
-import path from 'path';
+import { getLocalDb } from './database';
 import { Person, PermissionCheck } from '../types/index.js';
 import { getNotificationService } from './notification-service.js';
 
@@ -29,8 +29,8 @@ export interface PermissionResult {
 /**
  * Check if a person has permission to execute an action on a device
  */
-export async function checkPermission(context: PermissionContext, dbPath: string = path.join(process.cwd(), 'data', 'elo.db')): Promise<PermissionResult> {
-    const db = new Database(dbPath);
+export async function checkPermission(context: PermissionContext): Promise<PermissionResult> {
+    const db = getLocalDb();
 
     try {
         const result: PermissionResult = {
@@ -130,8 +130,6 @@ export async function checkPermission(context: PermissionContext, dbPath: string
             action: context.action,
             timestamp: new Date()
         };
-    } finally {
-        db.close();
     }
 }
 

@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
-import path from 'path';
 import Database from 'better-sqlite3';
+import { getLocalDb } from './database';
 
 export interface NotificationConfig {
   telegramBotToken?: string;
@@ -21,9 +21,9 @@ export class NotificationService {
   private config: NotificationConfig;
   private db: Database.Database;
 
-  constructor(config: NotificationConfig, dbPath: string = path.join(process.cwd(), 'data', 'elo.db')) {
+  constructor(config: NotificationConfig) {
     this.config = config;
-    this.db = new Database(dbPath);
+    this.db = getLocalDb();
 
     if (config.enabled && config.telegramBotToken && config.telegramChatId) {
       this.bot = new TelegramBot(config.telegramBotToken, { polling: false });
@@ -198,7 +198,7 @@ export function getNotificationService(): NotificationService | null {
   return notificationService;
 }
 
-export function initNotificationService(config: NotificationConfig, dbPath?: string): NotificationService {
-  notificationService = new NotificationService(config, dbPath);
+export function initNotificationService(config: NotificationConfig): NotificationService {
+  notificationService = new NotificationService(config);
   return notificationService;
 }

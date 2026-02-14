@@ -4,7 +4,7 @@
  */
 
 import Database from 'better-sqlite3';
-import path from 'path';
+import { getLocalDb } from './database';
 import { Person } from '../types/index.js';
 
 export interface RecognitionResult {
@@ -17,8 +17,8 @@ export interface RecognitionResult {
 export class FaceRecognitionEngine {
     private db: Database.Database;
 
-    constructor(dbPath: string = path.join(process.cwd(), 'data', 'elo.db')) {
-        this.db = new Database(dbPath);
+    constructor() {
+        this.db = getLocalDb();
     }
 
     /**
@@ -191,6 +191,6 @@ export class FaceRecognitionEngine {
     }
 
     close(): void {
-        this.db.close();
+        // DB is managed by centralized database module
     }
 }
